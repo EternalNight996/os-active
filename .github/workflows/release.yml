@@ -79,9 +79,12 @@ jobs:
           cargo install cargo-zigbuild --locked
           cargo install cargo-deb
 
-      - uses: mlugg/setup-zig@v1        # 交叉编译器(cargo-zigbuild 依赖;本机验证 0.16.0 与 glibc 2.27 兼容)
-        with:
-          version: 0.16.0
+      - name: 安装 zig 0.16.0(官方直链,cargo-zigbuild 交叉编译器)
+        run: |
+          curl -sSfL https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz -o zig.tar.xz
+          tar -xJf zig.tar.xz
+          echo "$PWD/zig-x86_64-linux-0.16.0" >> $GITHUB_PATH
+          zig version
 
       - name: 生成 deb 打包资源(等价本地 justfile gen-packaging)
         run: |
