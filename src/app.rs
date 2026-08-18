@@ -80,7 +80,7 @@ impl App {
       checking: false,
       rx,
       tx,
-      log_path: LogConf::default().get_folder().join(LogConf::default().get_fname()),
+      log_path: sn_log_path(),
       log_tail: vec![],
       phase: Phase::Detect,
       confirmed: false,
@@ -321,6 +321,13 @@ impl App {
         ui.label("发行版 ID:");
         ui.label(&r.os.distro_id);
         ui.end_row();
+        if !r.os.sn.is_empty() {
+          ui.label("SN:");
+          ui.label(RichText::new(r.os.sn.as_str()).color(Color32::from_rgb(0x2f, 0x6f, 0xcf)));
+          ui.label("");
+          ui.label("");
+          ui.end_row();
+        }
         if !r.os.pretty.is_empty() {
           ui.label("PRETTY_NAME:");
           ui.label(&r.os.pretty);
@@ -467,6 +474,7 @@ fn build_opts(r: &DetectResult, confirmed: bool, confirm_by: &str) -> serde_json
   serde_json::json!({
     "activation": r.activation.label(),
     "os": format!("{} {}", r.os.name, r.os.version),
+    "sn": r.os.sn,
     "distro": r.os.distro_id,
     "arch": r.os.arch,
     "summary": r.summary,
@@ -476,6 +484,16 @@ fn build_opts(r: &DetectResult, confirmed: bool, confirm_by: &str) -> serde_json
     "checked_at": r.checked_at,
     "details": details,
   })
+}
+
+
+/// 构造日志完整路径:logs/<SN>.log(SN 空则 os-active.log)
+fn sn_log_path() -> std::path::PathBuf {
+  let mut lc = LogConf::default();
+  if let Some(sn) = crate::detect::sys::get_sn() {
+    lc.set_fname(format!("{sn}.log"));
+  }
+  lc.get_folder().join(lc.get_fname())
 }
 
 /// 读取日志文件尾部 N 行

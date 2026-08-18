@@ -9,11 +9,17 @@ use config::logger::LogConf;
 use e_log::preload::*;
 
 fn main() -> eframe::Result<()> {
-  // 初始化 e-log:logs/os-active.log + stdout + panic hook
-  let log = LogConf::default();
+  // 初始化 e-log:logs/<SN>.log + stdout + panic hook(获取不到 SN 时用 os-active.log)
+  let mut log = LogConf::default();
+  if let Some(sn) = detect::sys::get_sn() {
+    log.set_fname(format!("{sn}.log"));
+  }
   let (sub, guards) = log.get_subscriber(log.level);
   log.init(sub).expect("初始化日志失败");
   info!("{} 启动", config::cargo::get_descript_version());
+  if let Some(sn) = detect::sys::get_sn() {
+    info!("设备 SN: {sn}");
+  }
 
   let options = eframe::NativeOptions {
     renderer: eframe::Renderer::Glow, // 对齐 etest:显式 Glow(eframe 0.35+ 默认 wgpu)

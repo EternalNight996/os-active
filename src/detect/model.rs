@@ -14,6 +14,8 @@ pub struct OsInfo {
   pub distro_id: String,
   /// os-release PRETTY_NAME 原文(仅 Linux)
   pub pretty: String,
+  /// 设备序列号(SN,获取不到为空)
+  pub sn: String,
 }
 
 /// 激活状态

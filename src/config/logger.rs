@@ -76,6 +76,10 @@ impl LogConf {
   pub fn get_fname(&self) -> String {
     self.fname.clone()
   }
+  /// 设置日志文件名(SN 命名)
+  pub fn set_fname(&mut self, fname: impl Into<String>) {
+    self.fname = fname.into();
+  }
   /// 日志目录
   pub fn get_folder(&self) -> PathBuf {
     self.folder.clone()
