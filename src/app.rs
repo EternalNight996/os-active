@@ -491,7 +491,7 @@ fn build_opts(r: &DetectResult, confirmed: bool, confirm_by: &str) -> serde_json
 fn sn_log_path() -> std::path::PathBuf {
   let mut lc = LogConf::default();
   if let Some(sn) = crate::detect::sys::get_sn() {
-    lc.set_fname(format!("{sn}.log"));
+    lc.set_fname(format!("{sn}-{}.log", crate::config::cargo::NAME));
   }
   lc.get_folder().join(lc.get_fname())
 }

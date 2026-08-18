@@ -11,8 +11,9 @@ use e_log::preload::*;
 fn main() -> eframe::Result<()> {
   // 初始化 e-log:logs/<SN>.log + stdout + panic hook(获取不到 SN 时用 os-active.log)
   let mut log = LogConf::default();
+  // logs/<SN>-os-active.log(SN+项目名);获取不到 SN 用 os-active.log
   if let Some(sn) = detect::sys::get_sn() {
-    log.set_fname(format!("{sn}.log"));
+    log.set_fname(format!("{sn}-{}.log", config::cargo::NAME));
   }
   let (sub, guards) = log.get_subscriber(log.level);
   log.init(sub).expect("初始化日志失败");
