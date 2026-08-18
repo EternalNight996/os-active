@@ -1,0 +1,208 @@
+name: release
+
+# os-active 跨平台发布工作流(参考 etest / deepseek-desktop-harness)
+#   build-windows -> Windows zip(MSVC)
+#   build-linux   -> Linux deb(zigbuild glibc 2.27 基线,Ubuntu18+/Kylin/UOS 通用)
+#   release       -> 汇总产物发布 GitHub Release
+#   gitee         -> 同步分支/tag 到 Gitee + 发布到 Gitee 发行版(双源互备,国内用户走 Gitee)
+#
+# 触发:推送 v* tag(如 v0.1.0),或手动指定 tag 补发
+# 前置:GitHub 仓库 -> Settings -> Secrets and variables -> Actions 新建 secret:
+#   GITEE_TOKEN: Gitee 私人令牌(gitee.com -> 设置 -> 安全设置 -> 私人令牌,勾选 projects/releases 权限)
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的 tag(例如 v0.1.0)'
+        required: false
+        default: 'v0.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  # ================= 1. 跨平台构建 =================
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable   # windows-latest 默认 MSVC 工具链
+
+      - name: 缓存 cargo(避免重复编译依赖)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/cache/
+            target
+          key: ${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-
+
+      - name: 构建 Windows 发布版 (MSVC)
+        run: cargo build --release
+
+      - name: 打包 zip(对齐本地 just dist:windows/ + README/LICENSE)
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          $d = "dist/os-active-v$v"
+          if (Test-Path $d) { Remove-Item -Recurse -Force $d }
+          New-Item -ItemType Directory -Force -Path "$d/windows" | Out-Null
+          Copy-Item target/release/os-active.exe "$d/windows/"
+          Copy-Item README.md $d
+          if (Test-Path LICENSE) { Copy-Item LICENSE $d }
+          Compress-Archive -Path $d -DestinationPath "dist/os-active-v$v.zip" -Force
+          Get-ChildItem dist | Select-Object Name, Length
+
+      - name: 上传 Windows 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: os-active-windows
+          path: dist/*.zip
+          if-no-files-found: error
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: 安装构建依赖(zigbuild + cargo-deb)
+        run: |
+          cargo install cargo-zigbuild --locked
+          cargo install cargo-deb
+
+      - name: 生成 deb 打包资源(等价本地 justfile gen-packaging)
+        run: |
+          mkdir -p target/packaging
+          cat > target/packaging/os-active-wrapper.sh <<'EOF'
+          #!/bin/sh
+          # os-active 启动器(多级显示后端回退)
+          # 部分国产 OS(如统信 UOS 1070)X server 的 GLX 扩展损坏,任何 GLX 程序会 GLXBadContextTag 崩溃;EGL 不走 GLX 可绕开
+          BIN=/usr/lib/os-active/os-active.bin
+          cd "$HOME" || exit 1
+          mkdir -p "$HOME/logs"
+          run() { "$@"; rc=$?; [ "$rc" -eq 0 ] || [ "$rc" -eq 130 ]; }
+          # 1) 默认: GLX 优先(正常机器)
+          run "$BIN" "$@" && exit 0
+          echo "[os-active] GLX 模式失败(exit $rc),尝试 EGL 后端..."
+          # 2) EGL 硬件加速(绕开损坏的 GLX)
+          run env E_AUTOTEST_GL=egl "$BIN" "$@" && exit 0
+          echo "[os-active] EGL 模式失败(exit $rc),尝试 EGL + 软件渲染..."
+          # 3) EGL + llvmpipe 软件渲染(兜底)
+          run env E_AUTOTEST_GL=egl LIBGL_ALWAYS_SOFTWARE=1 "$BIN" "$@" && exit 0
+          echo "[os-active] 所有显示后端均失败,请反馈日志。"
+          exit 1
+          EOF
+          cat > target/packaging/os-active.desktop <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=OS Active
+          Name[zh_CN]=系统激活状态检测
+          Comment=Check OS activation status
+          Comment[zh_CN]=检测系统激活状态
+          Exec=os-active
+          Terminal=false
+          Categories=System;Utility;
+          EOF
+          chmod +x target/packaging/os-active-wrapper.sh
+          ls -la target/packaging/
+
+      - name: 缓存 cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/cache/
+            target
+          key: ${{ runner.os }}-x86_64-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-x86_64-
+
+      - name: 交叉编译 Linux 发布版(glibc 2.27 基线,Kylin/UOS/Ubuntu18+ 通用)
+        run: cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.27
+
+      - name: 打 deb 包
+        run: cargo deb --no-build --no-strip --target x86_64-unknown-linux-gnu
+
+      - name: 上传 Linux 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: os-active-linux
+          path: |
+            target/debian/*.deb
+            README.md
+            LICENSE
+          if-no-files-found: error
+
+  # ================= 2. GitHub Release =================
+  release:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 汇总全部平台产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: 发布 GitHub Release(建 release + 上传 zip/deb)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          echo "=== artifacts 目录(诊断) ==="
+          find artifacts -maxdepth 3 -type f | head -30
+          FILES=$(find artifacts -type f \( -name '*.zip' -o -name '*.deb' \))
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes "os-active $TAG 跨平台发布(Windows zip + Linux deb)" || true
+          gh release upload "$TAG" $FILES --repo "$GITHUB_REPOSITORY" --clobber
+
+  # ================= 3. Gitee 双源:同步分支/tag + 发行版 =================
+  gitee:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 下载全部平台产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: 同步分支与 tag 到 Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          git config --global user.email "ci@users.noreply.github.com"
+          git config --global user.name "CI"
+          # tag 触发是 detached HEAD,先切回主分支(fetch-depth:0 已拉全部分支)
+          MAIN=$(git symbolic-ref --short HEAD 2>/dev/null || git branch -a --format '%(refname:short)' | grep -E '^(master|main)$' | head -1 || echo master)
+          git checkout "$MAIN" 2>/dev/null || true
+          PUSH_URL="https://eternalnight996:$GITEE_TOKEN@gitee.com/eternalnight996/os-active.git"
+          git push "$PUSH_URL" "$MAIN:$MAIN" "$TAG:$TAG" 2>&1 || echo "分支/tag 同步完成或已存在(忽略错误)"
+
+      - name: 发布到 Gitee 发行版(上传 zip/deb 附件)
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: node scripts/publish-gitee.mjs --tag "$TAG" --artifacts-dir artifacts --repo eternalnight996/os-active

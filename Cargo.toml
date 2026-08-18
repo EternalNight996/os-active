@@ -1,0 +1,41 @@
+[package]
+name = "os-active"
+version = "0.1.0"
+edition = "2021"
+authors = ["Eternal(梦游) <EternalNightYeah2@yeah.net>"]
+description = "系统激活状态检测工具 (egui 版, 支持 Kylin V10 / UOS V20 / Ubuntu 18.04+ / Windows 10/11)"
+homepage = "https://gitee.com/eternalnight996"
+build = "build.rs"
+rust-version = "1.85"
+
+[dependencies]
+eframe = { version = "0.36", default-features = false, features = ["glow", "default_fonts", "accesskit", "x11", "wayland"] }
+e-log = { version = "0.3", features = [
+  "tracing",
+  "tracing-appender",
+  "tracing-subscriber",
+  "tracing-log",
+  "panic",
+] }
+e-utils = { version = "0.4", features = ["cmd", "fs", "parse", "chrono", "regex"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+[profile.release]
+opt-level = 2
+
+[package.metadata.deb]
+name = "os-active"
+maintainer = "HEG Technology"
+copyright = "2026 HEG Technology"
+section = "utils"
+priority = "optional"
+# 依赖清单复刻 etest(经 Ubuntu 18.04 VM 真机实测补全,勿删):
+depends = "libc6 (>= 2.27), libgl1, libegl1, libxcursor1, libxi6, libxrandr2, libxinerama1, libxkbcommon0, libxkbcommon-x11-0"
+extended-description = "系统激活状态检测工具 (egui),支持 Kylin V10 / UOS V20 / Ubuntu 18.04+ / Windows 10/11"
+assets = [
+    ["target/release/os-active", "usr/lib/os-active/os-active.bin", "755"],
+    ["target/packaging/os-active-wrapper.sh", "usr/bin/os-active", "755"],
+    ["target/packaging/os-active.desktop", "usr/share/applications/", "644"],
+]

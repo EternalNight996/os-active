@@ -1,0 +1,6 @@
+/target
+/logs
+/dist
+/.dsh-vision-router
+*.log
+os-active.toml
