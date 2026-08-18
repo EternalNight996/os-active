@@ -1094,7 +1094,15 @@ impl GlutinWindowContext {
             // The justification for FallbackEgl over PreferEgl is at https://github.com/emilk/egui/pull/2526#issuecomment-1400229576 .
             .with_preference(match std::env::var("E_AUTOTEST_GL").as_deref() {
                 Ok("egl") => glutin_winit::ApiPreference::PreferEgl,
-                _ => glutin_winit::ApiPreference::FallbackEgl,
+                Ok("glx") => glutin_winit::ApiPreference::FallbackEgl,
+                // 默认:Linux 走 EGL 优先(统信 UOS/Kylin 的 GLX 扩展损坏会 GLXBadContextTag 崩溃;EGL 绕开)
+                _ => {
+                    if cfg!(target_os = "linux") {
+                        glutin_winit::ApiPreference::PreferEgl
+                    } else {
+                        glutin_winit::ApiPreference::FallbackEgl
+                    }
+                }
             })
             .with_window_attributes(Some(egui_winit::create_winit_window_attributes(
                 egui_ctx,

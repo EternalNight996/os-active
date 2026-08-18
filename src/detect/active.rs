@@ -319,7 +319,8 @@ fn extract_uos_expire(output: &str) -> Option<String> {
   for line in output.lines() {
     let line = line.trim();
     if let Some((_, v)) = line.split_once("到期时间") {
-      let v = v.trim_start_matches(':').trim().to_string();
+      // 到期时间:2026-11-03(半角)或到期时间：2026-11-03(全角),两种冒号都去掉
+      let v = v.trim_start_matches(':').trim_start_matches('：').trim().to_string();
       if !v.is_empty() {
         return Some(v);
       }

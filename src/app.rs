@@ -131,7 +131,7 @@ impl App {
       return;
     };
     if r.activation != Activation::Activated {
-      info!("激活校验未通过({}),不进入确认流程;请人工查看明细后关闭窗口", r.activation.label());
+      // 非激活:不进入确认流程(检测结论日志已在 poll 打过一次,此处避免每帧刷屏)
       return;
     }
     if self.cfg.app.auto_close {
