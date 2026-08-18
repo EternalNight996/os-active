@@ -67,22 +67,29 @@ jobs:
 
   build-linux:
     runs-on: ubuntu-latest
-    # ubuntu:18.04 容器内原生构建:glibc 2.27 天然匹配,产物可直接跑 Ubuntu18+/Kylin/UOS,
-    # 绕开 zig 交叉编译在 CI 网络下的下载失败(etest 推荐的生产路径即 deb-native 原生构建)
-    container: ubuntu:18.04
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
 
-      - name: 安装系统依赖(GL 开发库 + cargo-deb)
+      - name: 安装 zig(snap 优先,官方直链兜底)
         run: |
           set -euo pipefail
-          apt-get update
-          apt-get install -y build-essential pkg-config \
-            libgl1-mesa-dev libegl1-mesa-dev \
-            libxcursor-dev libxi-dev libxrandr-dev libxinerama-dev libxkbcommon-dev \
-            xz-utils file
+          if sudo snap install zig --classic --channel=stable 2>/dev/null; then
+            echo '[zig] installed via snap'
+          else
+            echo '[zig] snap 失败,尝试官方直链'
+            curl -fsSL --retry 3 --connect-timeout 20 --max-time 300 -o zig.tar.xz https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz
+            tar -xJf zig.tar.xz
+            echo "$PWD/zig-x86_64-linux-0.16.0" >> $GITHUB_PATH
+          fi
+          zig version
+
+      - name: 安装构建依赖(zigbuild + cargo-deb)
+        run: |
+          cargo install cargo-zigbuild --locked
           cargo install cargo-deb
 
       - name: 生成 deb 打包资源(等价本地 justfile gen-packaging)
@@ -121,11 +128,21 @@ jobs:
           chmod +x target/packaging/os-active-wrapper.sh
           ls -la target/packaging/
 
-      - name: 构建 Linux 发布版(glibc 2.27 原生,Ubuntu18/Kylin/UOS 通用)
-        run: cargo build --release
+      - name: 缓存 cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/cache/
+            target
+          key: ${{ runner.os }}-x86_64-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-x86_64-
+
+      - name: 交叉编译 Linux 发布版(glibc 2.27 基线,Kylin/UOS/Ubuntu18+ 通用)
+        run: cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.27
 
       - name: 打 deb 包
-        run: cargo deb --no-build --no-strip
+        run: cargo deb --no-build --no-strip --target x86_64-unknown-linux-gnu
 
       - name: 上传 Linux 产物
         uses: actions/upload-artifact@v4
