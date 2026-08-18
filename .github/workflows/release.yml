@@ -74,23 +74,18 @@ jobs:
         with:
           targets: x86_64-unknown-linux-gnu
 
-      - name: 安装 zig(snap 优先,官方直链兜底)
+      - name: 安装 zig 与 cargo-zigbuild(PyPI 官方推荐,CI 网络可靠)
         run: |
           set -euo pipefail
-          if sudo snap install zig --classic --channel=stable 2>/dev/null; then
-            echo '[zig] installed via snap'
-          else
-            echo '[zig] snap 失败,尝试官方直链'
-            curl -fsSL --retry 3 --connect-timeout 20 --max-time 300 -o zig.tar.xz https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz
-            tar -xJf zig.tar.xz
-            echo "$PWD/zig-x86_64-linux-0.16.0" >> $GITHUB_PATH
-          fi
+          # cargo-zigbuild 官方推荐:pip 安装会自动带上 ziglang(zig 二进制)
+          pip install --user --break-system-packages cargo-zigbuild ziglang
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          export PATH="$HOME/.local/bin:$PATH"
           zig version
+          cargo-zigbuild --version
 
-      - name: 安装构建依赖(zigbuild + cargo-deb)
-        run: |
-          cargo install cargo-zigbuild --locked
-          cargo install cargo-deb
+      - name: 安装 cargo-deb
+        run: cargo install cargo-deb
 
       - name: 生成 deb 打包资源(等价本地 justfile gen-packaging)
         run: |
