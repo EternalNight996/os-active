@@ -74,15 +74,26 @@ jobs:
         with:
           targets: x86_64-unknown-linux-gnu
 
-      - name: 安装 zig 与 cargo-zigbuild(PyPI 官方推荐,CI 网络可靠)
+      - name: 安装 zig 与 cargo-zigbuild(venv + PyPI,步骤输出落盘供诊断)
         run: |
           set -euo pipefail
+          : > /tmp/ci.log
+          python3 -m venv /tmp/zb-venv 2>&1 | tee -a /tmp/ci.log
+          /tmp/zb-venv/bin/pip install --upgrade pip 2>&1 | tee -a /tmp/ci.log
           # cargo-zigbuild 官方推荐:pip 安装会自动带上 ziglang(zig 二进制)
-          pip install --user --break-system-packages cargo-zigbuild ziglang
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          export PATH="$HOME/.local/bin:$PATH"
-          zig version
-          cargo-zigbuild --version
+          /tmp/zb-venv/bin/pip install cargo-zigbuild ziglang 2>&1 | tee -a /tmp/ci.log
+          echo "/tmp/zb-venv/bin" >> $GITHUB_PATH
+          export PATH="/tmp/zb-venv/bin:$PATH"
+          zig version 2>&1 | tee -a /tmp/ci.log
+          cargo-zigbuild --version 2>&1 | tee -a /tmp/ci.log
+
+      - name: 上传 Linux 构建诊断日志(失败也上传,供排查)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-ci-log
+          path: /tmp/ci.log
+          if-no-files-found: ignore
 
       - name: 安装 cargo-deb
         run: cargo install cargo-deb
