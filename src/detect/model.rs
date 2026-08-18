@@ -74,6 +74,8 @@ pub struct DetectResult {
   /// 一句话判定摘要
   pub summary: String,
   pub items: Vec<CheckItem>,
+  /// 授权到期时间(麒麟 .kyinfo term / 统信 到期时间 / Windows 批量激活过期,解析不出为 None)
+  pub expire_at: Option<String>,
   /// 检测时间(本地, %Y-%m-%d %H:%M:%S)
   pub checked_at: String,
 }

@@ -328,6 +328,13 @@ impl App {
           ui.label("");
           ui.end_row();
         }
+        if let Some(e) = &r.expire_at {
+          ui.label("授权到期:");
+          ui.label(RichText::new(e.as_str()).color(Color32::from_rgb(0xd0, 0x7a, 0x1f)));
+          ui.label("");
+          ui.label("");
+          ui.end_row();
+        }
       } else {
         ui.label("检测中...");
         ui.end_row();
@@ -463,6 +470,7 @@ fn build_opts(r: &DetectResult, confirmed: bool, confirm_by: &str) -> serde_json
     "distro": r.os.distro_id,
     "arch": r.os.arch,
     "summary": r.summary,
+    "expire_at": r.expire_at,
     "confirmed": confirmed,
     "confirm_by": confirm_by,
     "checked_at": r.checked_at,

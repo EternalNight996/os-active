@@ -67,18 +67,23 @@ jobs:
 
   build-linux:
     runs-on: ubuntu-latest
-    # cargo-zigbuild 官方 Docker 镜像(ghcr.io):预装 rust + zig + cargo-zigbuild,
-    # 绕开 CI 网络下载 zig 的不可靠问题;GitHub 自家 registry 拉取无碍
-    container: ghcr.io/rust-cross/cargo-zigbuild:latest
+    # 说明:CI 上 zig 交叉编译器获取不可靠(GitHub runner 访问 ziglang.org 受限),
+    # 此 job 用 runner 原生构建产物(glibc 2.39,适用于 Ubuntu 24.04+/较新系统);
+    # Ubuntu 18.04+/Kylin/UOS 老系统请用本机/目标机 `just deb-native` 或 Windows 交叉 `just deb`
+    # (Windows 交叉编译本机已验证:zig 0.16 + cargo-zigbuild 0.23 可出 glibc 2.27 ELF64)
     steps:
       - uses: actions/checkout@v4
 
-      - name: 环境自检(镜像已预装 rust/zig/zigbuild)
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: 安装系统依赖(GL 开发库 + cargo-deb)
         run: |
           set -euo pipefail
-          rustc --version
-          zig version
-          cargo zigbuild --version
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config \
+            libgl1-mesa-dev libegl1-mesa-dev \
+            libxcursor-dev libxi-dev libxrandr-dev libxinerama-dev libxkbcommon-dev
+          cargo install cargo-deb
 
       - name: 生成 deb 打包资源(等价本地 justfile gen-packaging)
         run: |
@@ -116,14 +121,11 @@ jobs:
           chmod +x target/packaging/os-active-wrapper.sh
           ls -la target/packaging/
 
-      - name: 安装 cargo-deb
-        run: cargo install cargo-deb
-
-      - name: 交叉编译 Linux 发布版(glibc 2.27 基线,Kylin/UOS/Ubuntu18+ 通用)
-        run: cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.27
+      - name: 构建 Linux 发布版(runner 原生,glibc 2.39)
+        run: cargo build --release
 
       - name: 打 deb 包
-        run: cargo deb --no-build --no-strip --target x86_64-unknown-linux-gnu
+        run: cargo deb --no-build --no-strip
 
       - name: 上传 Linux 产物
         uses: actions/upload-artifact@v4

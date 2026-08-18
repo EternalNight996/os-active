@@ -9,7 +9,7 @@ use e_utils::cmd::Cmd;
 
 /// 按系统执行激活检测
 #[allow(unused_variables)]
-pub fn check(os: &OsInfo) -> (Activation, Vec<CheckItem>, String) {
+pub fn check(os: &OsInfo) -> (Activation, Vec<CheckItem>, String, Option<String>) {
   #[cfg(windows)]
   {
     check_windows()
@@ -24,6 +24,7 @@ pub fn check(os: &OsInfo) -> (Activation, Vec<CheckItem>, String) {
       Activation::Unknown,
       vec![CheckItem::new("平台支持", "n/a", false, "当前平台不支持激活检测".into(), "不支持的平台")],
       "当前平台不支持激活检测".to_string(),
+      None,
     )
   }
 }
@@ -75,7 +76,7 @@ fn judge(out: &str, act_kw: &[&str], not_kw: &[&str]) -> Activation {
 // ---------------------------------------------------------------- Windows
 
 #[cfg(windows)]
-fn check_windows() -> (Activation, Vec<CheckItem>, String) {
+fn check_windows() -> (Activation, Vec<CheckItem>, String, Option<String>) {
   // slmgr.vbs 位于 System32,必须指定工作目录否则 cscript 找不到脚本
   let sys32 = std::env::var("SystemRoot")
     .unwrap_or_else(|_| "C:\\Windows".to_string())
@@ -98,7 +99,9 @@ fn check_windows() -> (Activation, Vec<CheckItem>, String) {
     Activation::Unknown => "Windows 激活状态无法判定,请查看下方明细".to_string(),
     Activation::NotApplicable => "无需激活".to_string(),
   };
-  (act, items, summary)
+  // 提取批量激活到期时间(-xpr 输出:批量激活将于 2027/2/4 17:50:22 过期 / 永久激活)
+  let expire = extract_date(&xpr_out);
+  (act, items, summary, expire)
 }
 
 #[cfg(windows)]
@@ -136,12 +139,12 @@ fn judge_windows(xpr: &str, dlv: &str) -> Activation {
 // ------------------------------------------------------------------ Linux
 
 #[cfg(target_os = "linux")]
-fn check_linux(os: &OsInfo) -> (Activation, Vec<CheckItem>, String) {
+fn check_linux(os: &OsInfo) -> (Activation, Vec<CheckItem>, String, Option<String>) {
   let mut items: Vec<CheckItem> = vec![];
   match os.distro_id.as_str() {
     "ubuntu" => {
       items.push(CheckItem::new("激活机制", "n/a", true, "Ubuntu 无系统激活机制,安装即完整授权".into(), "无需激活"));
-      (Activation::NotApplicable, items, "Ubuntu 无需激活".to_string())
+      (Activation::NotApplicable, items, "Ubuntu 无需激活".to_string(), None)
     }
     "kylin" => check_kylin(&mut items),
     "uos" | "deepin" => check_uos(&mut items),
@@ -155,14 +158,14 @@ fn check_linux(os: &OsInfo) -> (Activation, Vec<CheckItem>, String) {
         format!("未识别的发行版: {}", os.pretty),
         "未知系统",
       ));
-      (Activation::Unknown, items, "无法识别的系统发行版".to_string())
+      (Activation::Unknown, items, "无法识别的系统发行版".to_string(), None)
     }
   }
 }
 
 /// 银河麒麟 V10: licence -l + /etc/.kyinfo
 #[cfg(target_os = "linux")]
-fn check_kylin(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, String) {
+fn check_kylin(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, String, Option<String>) {
   let lic = run_check("麒麟授权查询", "licence", &["-l"], None);
   let kyinfo = read_file_check("/etc/.kyinfo", "麒麟授权文件(.kyinfo)");
   let (lic_success, lic_out) = (lic.success, lic.output.clone());
@@ -188,13 +191,15 @@ fn check_kylin(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, Strin
   } else {
     Activation::Unknown
   };
+  // 授权到期时间(.kyinfo term 字段,官方:term=到期期限)
+  let expire = extract_kyinfo_term(&kyinfo_out);
   let summary = match act {
     Activation::Activated => "银河麒麟已激活".to_string(),
     Activation::NotActivated => "银河麒麟未激活".to_string(),
     Activation::Unknown => "银河麒麟激活状态无法判定,请查看下方明细".to_string(),
     Activation::NotApplicable => "无需激活".to_string(),
   };
-  (act, items.clone(), summary)
+  (act, items.clone(), summary, expire)
 }
 
 
@@ -266,15 +271,16 @@ fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
 
 /// 统信 UOS V20: uos-activator-cmd -q
 #[cfg(target_os = "linux")]
-fn check_uos(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, String) {
+fn check_uos(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, String, Option<String>) {
   let q = run_check("UOS 激活状态查询", "uos-activator-cmd", &["-q"], None);
   let (q_success, q_out) = (q.success, q.output.clone());
   items.push(q);
   let act = if q_success {
     judge(
       &q_out,
-      &["已激活", "activated", "激活成功", "已授权"],
-      &["未激活", "not activated", "未授权", "试用", "trial", "expired"],
+      // 官方输出:激活状态=免费授权/已激活/试用期;到期时间=终身有效/日期
+      &["已激活", "activated", "激活成功", "已授权", "免费授权", "active"],
+      &["未激活", "not activated", "未授权", "试用期", "试用", "trial", "expired", "已过期"],
     )
   } else {
     Activation::Unknown
@@ -285,7 +291,77 @@ fn check_uos(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, String)
     Activation::Unknown => "统信 UOS 激活状态无法判定,请查看下方明细".to_string(),
     Activation::NotApplicable => "无需激活".to_string(),
   };
-  (act, items.clone(), summary)
+  // 授权到期时间(官方输出:到期时间:2025-12-14 / 终身有效)
+  let expire = extract_uos_expire(&q_out);
+  (act, items.clone(), summary, expire)
+}
+
+
+/// 提取 .kyinfo 的 term 到期时间原文(如 2025-07-29)
+#[allow(dead_code)]
+fn extract_kyinfo_term(content: &str) -> Option<String> {
+  for line in content.lines() {
+    let line = line.trim();
+    let Some((_, v)) = line.split_once("term=") else {
+      continue;
+    };
+    let v = v.trim().to_string();
+    if !v.is_empty() {
+      return Some(v);
+    }
+  }
+  None
+}
+
+/// 提取统信 uos-activator-cmd -q 输出的到期时间(到期时间:2025-12-14 / 终身有效)
+#[allow(dead_code)]
+fn extract_uos_expire(output: &str) -> Option<String> {
+  for line in output.lines() {
+    let line = line.trim();
+    if let Some((_, v)) = line.split_once("到期时间") {
+      let v = v.trim_start_matches(':').trim().to_string();
+      if !v.is_empty() {
+        return Some(v);
+      }
+    }
+  }
+  None
+}
+
+/// 提取 Windows slmgr -xpr 的批量激活到期日期(批量激活将于 2027/2/4 17:50:22 过期 / 永久激活)
+#[allow(dead_code)]
+fn extract_date(output: &str) -> Option<String> {
+  let s = output.to_lowercase();
+  if s.contains("永久激活") || s.contains("permanently activated") {
+    return Some("永久激活".to_string());
+  }
+  // 匹配 YYYY/M/D 或 YYYY/M/D HH:MM:SS
+  for line in output.lines() {
+    let line = line.trim();
+    let mut chars = line.chars().peekable();
+    let mut digits = String::new();
+    while let Some(&c) = chars.peek() {
+      if c.is_ascii_digit() || c == '/' || c == ':' || c == ' ' || c == '-' {
+        digits.push(c);
+        chars.next();
+      } else if digits.contains('/') {
+        // 可能日期:至少两段数字
+        let parts: Vec<&str> = digits.trim().split_whitespace().collect();
+        if parts.len() >= 1 && parts[0].contains('/') {
+          let seg: Vec<&str> = parts[0].split('/').collect();
+          if seg.len() == 3 {
+            return Some(parts[0].to_string());
+          }
+        }
+        digits.clear();
+        chars.next();
+      } else {
+        digits.clear();
+        chars.next();
+      }
+    }
+  }
+  None
 }
 
 #[cfg(test)]

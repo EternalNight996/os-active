@@ -39,3 +39,7 @@ assets = [
     ["target/packaging/os-active-wrapper.sh", "usr/bin/os-active", "755"],
     ["target/packaging/os-active.desktop", "usr/share/applications/", "644"],
 ]
+# 国产 OS(UOS/Kylin)GLX 假成功崩溃绕开:EGL 优先(照抄 etest eframe fork v0.36.0-egl1 的 E_AUTOTEST_GL patch)
+# 用法: E_AUTOTEST_GL=egl os-active  (wrapper 启动器已内置三级回退)
+[patch.crates-io]
+eframe = { path = "vendor/eframe-0361-egl" }

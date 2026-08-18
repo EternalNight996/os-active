@@ -9,7 +9,7 @@ use e_log::preload::*;
 pub fn run() -> model::DetectResult {
   let os = sys::detect_os();
   info!("系统识别: {} {} ({})", os.name, os.version, os.arch);
-  let (activation, items, summary) = active::check(&os);
+  let (activation, items, summary, expire_at) = active::check(&os);
   // 明细逐条落日志(日志体现明细)
   for it in &items {
     info!(
@@ -17,12 +17,16 @@ pub fn run() -> model::DetectResult {
       it.name, it.command, it.success, it.verdict, it.output
     );
   }
+  if let Some(e) = &expire_at {
+    info!("授权到期时间: {e}");
+  }
   info!("检测结论: {} -> {}", activation.label(), summary);
   model::DetectResult {
     os,
     activation,
     summary,
     items,
+    expire_at,
     checked_at: format_now(),
   }
 }

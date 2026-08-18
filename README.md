@@ -104,6 +104,10 @@ just version       # 读取版本号(Cargo.toml 唯一来源)
 
 - **CI 自动同步**:`release.yml` 的 `gitee` job 在发版时自动把主分支与 tag 推送到 Gitee,无需手动同步
 
+> **国产 OS 显示回退(UOS/Kylin)**:统信 UOS 1070 等 X server 的 GLX 扩展损坏,任何 GLX 程序会 `GLXBadContextTag` 崩溃。本项目已 **vendor 带 EGL 优先 patch 的 eframe 0.36.1**(`vendor/eframe-0361-egl`):
+> - 设 `E_AUTOTEST_GL=egl` → `PreferEgl`(EGL 优先,绕开损坏 GLX);默认 `FallbackEgl`(正常系统不受影响)
+> - deb 启动器内置三级回退(GLX → EGL → EGL+软件渲染),`dpkg -i` 安装后自动生效
+> - 手动运行: `E_AUTOTEST_GL=egl ./os-active`
 ## 配置表 os-active.toml
 
 放在运行目录下,缺失时使用默认值:
