@@ -79,9 +79,20 @@ jobs:
           cargo install cargo-zigbuild --locked
           cargo install cargo-deb
 
-      - name: 安装 zig 0.16.0(官方直链,cargo-zigbuild 交叉编译器)
+      - name: 安装 zig 0.16.0(官方直链,带重试与大小校验)
         run: |
-          curl -sSfL https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz -o zig.tar.xz
+          set -euo pipefail
+          URL=https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz
+          EXPECTED=55478392
+          for i in 1 2 3 4 5; do
+            curl -fsSL --retry 3 --retry-delay 5 -o zig.tar.xz "$URL" && break
+            echo "[zig] 下载第 $i 次失败,10s 后重试"
+            sleep 10
+          done
+          ls -la zig.tar.xz
+          ACTUAL=$(stat -c%s zig.tar.xz 2>/dev/null || stat -f%z zig.tar.xz)
+          echo "[zig] size=$ACTUAL expected=$EXPECTED"
+          [ "$ACTUAL" = "$EXPECTED" ] || { echo "[zig] 大小不符,中止"; exit 1; }
           tar -xJf zig.tar.xz
           echo "$PWD/zig-x86_64-linux-0.16.0" >> $GITHUB_PATH
           zig version

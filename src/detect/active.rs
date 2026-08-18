@@ -166,7 +166,7 @@ fn check_kylin(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, Strin
   let lic = run_check("麒麟授权查询", "licence", &["-l"], None);
   let kyinfo = read_file_check("/etc/.kyinfo", "麒麟授权文件(.kyinfo)");
   let (lic_success, lic_out) = (lic.success, lic.output.clone());
-  let kyinfo_success = kyinfo.success;
+  let (kyinfo_success, kyinfo_out) = (kyinfo.success, kyinfo.output.clone());
   items.push(lic);
   items.push(kyinfo);
 
@@ -177,8 +177,14 @@ fn check_kylin(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, Strin
       &["未激活", "not activated", "试用", "trial", "invalid", "expired", "未授权", "未激活"],
     )
   } else if kyinfo_success {
-    // licence 工具不可用但授权文件存在:弱判定已激活
-    Activation::Activated
+    // licence 命令不可用时解析 /etc/.kyinfo 的授权到期时间(to=term=YYYY-MM-DD):
+    //   term >= 今天 -> 已激活(有效期内);term < 今天 -> 未激活(已过期);
+    //   解析不出 term -> 无法判定(.kyinfo 存在不代表已激活,过期授权文件也会留存)
+    match kyinfo_expire_days(&kyinfo_out) {
+      Some(expire) if expire >= today_days() => Activation::Activated,
+      Some(_) => Activation::NotActivated,
+      None => Activation::Unknown,
+    }
   } else {
     Activation::Unknown
   };
@@ -189,6 +195,73 @@ fn check_kylin(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, Strin
     Activation::NotApplicable => "无需激活".to_string(),
   };
   (act, items.clone(), summary)
+}
+
+
+/// 解析 .kyinfo 中的授权到期时间(to=term=YYYY-MM-DD,支持 - / . 分隔),返回绝对天数
+#[allow(dead_code)]
+fn kyinfo_expire_days(content: &str) -> Option<i64> {
+  for line in content.lines() {
+    let line = line.trim();
+    if line.is_empty() {
+      continue;
+    }
+    let Some((_, v)) = line.split_once("term=") else {
+      continue;
+    };
+    let v = v.trim();
+    // 取日期部分 YYYY[-/.]MM[-/.]DD
+    let nums: Vec<i64> = v
+      .split(|c: char| c == '-' || c == '/' || c == '.' || c == ' ' || c == ':')
+      .filter_map(|s| s.parse::<i64>().ok())
+      .collect();
+    if nums.len() >= 3 {
+      return Some(days_from_civil(nums[0], nums[1], nums[2]));
+    }
+    return None;
+  }
+  None
+}
+
+/// 今天(本地日期)的绝对天数
+#[allow(dead_code)]
+fn today_days() -> i64 {
+  use std::time::{SystemTime, UNIX_EPOCH};
+  let secs = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .map(|d| d.as_secs() as i64)
+    .unwrap_or(0)
+    + 8 * 3600; // UTC+8
+  days_from_civil_from_secs(secs)
+}
+
+/// 秒数(UTC+8) -> 公历天数(与 detect::format_now 的 civil_from_days 同源算法)
+#[allow(dead_code)]
+fn days_from_civil_from_secs(secs: i64) -> i64 {
+  let days = secs.div_euclid(86400);
+  let z = days + 719468;
+  let era = if z >= 0 { z } else { z - 146096 } / 146097;
+  let doe = (z - era * 146097) as i64;
+  let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+  let y = yoe as i64 + era * 400;
+  let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+  let mp = (5 * doy + 2) / 153;
+  let d = doy - (153 * mp + 2) / 5 + 1;
+  let m = if mp < 10 { mp + 3 } else { mp - 9 };
+  let y = if m <= 2 { y + 1 } else { y };
+  days_from_civil(y, m, d)
+}
+
+/// 公历(年,月,日)转绝对天数(Howard Hinnant 逆算法)
+#[allow(dead_code)]
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+  let y = if m <= 2 { y - 1 } else { y };
+  let era = if y >= 0 { y } else { y - 399 } / 400;
+  let yoe = (y - era * 400) as i64;
+  let mp = if m > 2 { m - 3 } else { m + 9 } as i64;
+  let doy = (153 * mp + 2) / 5 + d - 1;
+  let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+  era * 146097 + doe - 719468
 }
 
 /// 统信 UOS V20: uos-activator-cmd -q
@@ -213,4 +286,46 @@ fn check_uos(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, String)
     Activation::NotApplicable => "无需激活".to_string(),
   };
   (act, items.clone(), summary)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  /// 主上真机 .kyinfo(麒麟 V10 SP1,授权已过期 2025-07-29)
+  const KYINFO_EXPIRED: &str = "[dist]name=Kylin-Desktop
+milestone=V10
+arch=x86_64
+beta=False
+time=2024-04-07 14:45:43
+dist_id=Kylin-Desktop-V10-SP1-2403-Release-20240430-x86_64-2024-04-07 14:45:43
+[servicekey]key=0467027
+[os]to=term=2025-07-29";
+
+  /// 有效期内授权(term=2027-12-31)
+  const KYINFO_VALID: &str = "[dist]name=Kylin-Desktop
+milestone=V10
+arch=x86_64
+[servicekey]key=ABCDEFG
+[os]to=term=2027-12-31";
+
+  #[test]
+  fn parse_expire_days() {
+    let d = kyinfo_expire_days(KYINFO_EXPIRED).expect("parse expired");
+    assert_eq!(days_from_civil(2025, 7, 29), d);
+    let d2 = kyinfo_expire_days(KYINFO_VALID).expect("parse valid");
+    assert_eq!(days_from_civil(2027, 12, 31), d2);
+  }
+
+  #[test]
+  fn expire_compare_today() {
+    let today = today_days();
+    assert!(kyinfo_expire_days(KYINFO_EXPIRED).unwrap() < today);
+    assert!(kyinfo_expire_days(KYINFO_VALID).unwrap() > today);
+  }
+
+  #[test]
+  fn days_roundtrip() {
+    assert_eq!(days_from_civil(2026, 1, 1), days_from_civil_from_secs(1767225600 + 8 * 3600));
+  }
 }
