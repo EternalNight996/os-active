@@ -24,6 +24,12 @@ dist_dir     := "dist"                           # 打包输出目录
 win_exe      := "target/" + profile + "/" + bin + ".exe"
 linux_bin    := "target/" + target_short + "/" + profile + "/" + bin
 
+# ---- 开发机 VM 验证环境(参考 etest,按实际调整;不影响本地运行/打包)----
+vm_host  := "test@192.168.128.50"
+vm_ssh   := "ssh -o BatchMode=yes -o StrictHostKeyChecking=no -i vm/id_vm"
+vm_scp   := "scp -o BatchMode=yes -o StrictHostKeyChecking=no -i vm/id_vm"
+vm_vmx   := "F:/MyApp/eternal/os-active/vm/os-active.vmx"
+
 default:
     @just --list
     @Write-Host ''
@@ -169,6 +175,26 @@ dist: build-win
 # 一键打包(Windows + Linux 双平台)
 dist-all: build-win build-linux
     @$v = (just version | Select-Object -Last 1).Trim(); $d = '{{dist_dir}}/os-active-v' + $v; if (Test-Path $d) { Remove-Item -Recurse -Force $d }; New-Item -ItemType Directory -Force -Path ($d + '/windows'), ($d + '/linux') | Out-Null; Copy-Item {{win_exe}} ($d + '/windows/'); Copy-Item {{linux_bin}} ($d + '/linux/'); Copy-Item README.md $d; if (Test-Path LICENSE) { Copy-Item LICENSE $d }; $zip = '{{dist_dir}}/os-active-v' + $v + '.zip'; if (Test-Path $zip) { Remove-Item -Force $zip }; Compress-Archive -Path $d -DestinationPath $zip; Write-Host ('打包完成: ' + (Resolve-Path $zip).Path)
+
+# ---- 开发机 VM 验证(环境特定,可选)----
+
+# 启动 Ubuntu 18.04 验证 VM(仅本机 VMware)
+vm-start:
+    Start-Process "C:/Program Files/VMware/x64/vmware-vmx.exe" -ArgumentList '-x','-q','--','{{vm_vmx}}'
+
+# 上传 Linux 二进制到验证 VM,Xvfb 无头运行并检查日志/存活(适配 os-active)
+vm-run: build-linux
+    {{vm_scp}} target/{{target_short}}/{{profile}}/{{bin}} {{vm_host}}:~/os-active
+    {{vm_ssh}} {{vm_host}} "chmod +x os-active; pkill -x os-active; pkill -x Xvfb; sleep 1; \
+      (Xvfb :99 -screen 0 1280x760x24 >/dev/null 2>&1 &); sleep 2; \
+      (DISPLAY=:99 E_AUTOTEST_GL=egl ./os-active >/tmp/os-active.log 2>&1 </dev/null &); sleep 8; \
+      pgrep -x os-active >/dev/null && echo OS-ACTIVE-ALIVE || echo OS-ACTIVE-DEAD; \
+      tail -8 /tmp/os-active.log; pkill -x os-active; pkill -x Xvfb; true"
+
+# deb 包在验证 VM 内安装回归
+vm-install: deb
+    {{vm_scp}} target/debian/*.deb {{vm_host}}:/tmp/
+    {{vm_ssh}} {{vm_host}} "echo test123 | sudo -S dpkg -i /tmp/os-active_*.deb 2>&1 | tail -2; dpkg -l os-active | tail -1"
 
 # 清理构建产物(含打包目录)
 clean:
