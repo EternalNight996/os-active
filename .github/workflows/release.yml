@@ -67,34 +67,18 @@ jobs:
 
   build-linux:
     runs-on: ubuntu-latest
+    # cargo-zigbuild 官方 Docker 镜像(ghcr.io):预装 rust + zig + cargo-zigbuild,
+    # 绕开 CI 网络下载 zig 的不可靠问题;GitHub 自家 registry 拉取无碍
+    container: ghcr.io/rust-cross/cargo-zigbuild:latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-gnu
-
-      - name: 安装 zig 与 cargo-zigbuild(PyPI,步骤输出落盘供诊断)
+      - name: 环境自检(镜像已预装 rust/zig/zigbuild)
         run: |
           set -euo pipefail
-          : > /tmp/ci.log
-          # cargo-zigbuild 官方推荐:pip 安装会自动带上 ziglang(zig 二进制)
-          python3 -m pip install --break-system-packages --quiet cargo-zigbuild ziglang 2>&1 | tee -a /tmp/ci.log
-          export PATH="/usr/local/bin:$HOME/.local/bin:$PATH"
-          zig version 2>&1 | tee -a /tmp/ci.log
-          cargo-zigbuild --version 2>&1 | tee -a /tmp/ci.log
-          which zig || echo '[zig] zig not in PATH' | tee -a /tmp/ci.log
-
-      - name: 上传 Linux 构建诊断日志(失败也上传,供排查)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-ci-log
-          path: /tmp/ci.log
-          if-no-files-found: ignore
-
-      - name: 安装 cargo-deb
-        run: cargo install cargo-deb
+          rustc --version
+          zig version
+          cargo zigbuild --version
 
       - name: 生成 deb 打包资源(等价本地 justfile gen-packaging)
         run: |
@@ -132,15 +116,8 @@ jobs:
           chmod +x target/packaging/os-active-wrapper.sh
           ls -la target/packaging/
 
-      - name: 缓存 cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/cache/
-            target
-          key: ${{ runner.os }}-x86_64-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-x86_64-
+      - name: 安装 cargo-deb
+        run: cargo install cargo-deb
 
       - name: 交叉编译 Linux 发布版(glibc 2.27 基线,Kylin/UOS/Ubuntu18+ 通用)
         run: cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.27
