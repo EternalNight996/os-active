@@ -123,10 +123,12 @@ fn detect_windows() -> OsInfo {
 #[cfg(target_os = "linux")]
 fn byodmi_sn() -> Option<String> {
   let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+  // 层级:工具名 -> 架构 -> 操作系统 -> 具体工具 (tools/ByoDmi/x86_64/linux/ByoDmi)
   let byodmi = exe_dir
-    .join("plugins")
-    .join(std::env::consts::ARCH)
+    .join("tools")
     .join("ByoDmi")
+    .join(std::env::consts::ARCH)
+    .join(std::env::consts::OS)
     .join("ByoDmi");
   if !byodmi.exists() {
     return None;
