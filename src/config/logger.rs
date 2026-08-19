@@ -19,6 +19,23 @@ use std::path::PathBuf;
 
 /// 日志文件名(用户约定: logs/文件名.log)
 pub const LOG_FNAME: &str = "os-active.log";
+/// 日志目录:当前软件路径(程序所在目录)/logs;该目录不可写时 fallback 到家目录
+fn default_log_folder() -> PathBuf {
+  // 优先:程序可执行文件所在目录下的 logs/
+  if let Some(exe_dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())) {
+    let candidate = exe_dir.join("logs");
+    // 已存在或可创建(可写)则用
+    if candidate.exists() || std::fs::create_dir_all(&candidate).is_ok() {
+      return candidate;
+    }
+  }
+  // fallback:家目录 os-active/logs
+  let home = std::env::var("HOME")
+    .or_else(|_| std::env::var("USERPROFILE"))
+    .unwrap_or_else(|_| ".".to_string());
+  PathBuf::from(home).join("os-active").join("logs")
+}
+
 
 /// 日志格式: [2026-01-01 12:00:00.123 INFO] 消息
 struct MyLogFormat;
@@ -62,8 +79,8 @@ impl Default for LogConf {
   fn default() -> Self {
     Self {
       level: Level::Debug,
-      // 与 etest-core ORIGIN 语义一致:当前工作目录下 logs/
-      folder: std::env::current_dir().unwrap_or_default().join("logs"),
+      // 当前软件路径 logs/(程序所在目录,避免写 U 盘;不可写则家目录兜底)
+      folder: default_log_folder(),
       fname: LOG_FNAME.to_string(),
       format: String::new(),
       output_list: vec![],

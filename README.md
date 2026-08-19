@@ -12,7 +12,7 @@
   <a href="https://gitee.com/eternalnight996/os-active/releases">📦 下载</a>
 </p>
 
-**一句话**: 跨平台 GUI 工具,一键检测 **银河麒麟 V10 SP1 / 统信 UOS V20 / Ubuntu 18.04+ / Windows 10/11** 的系统激活状态,GUI 大字显示已激活/未激活,e-log 把每条检测命令与原始输出写入 `logs/os-active.log`。
+**一句话**: 跨平台 GUI 工具,一键检测 **银河麒麟 V10 SP1 / 统信 UOS V20 / Ubuntu 18.04+ / Windows 10/11** 的系统激活状态,GUI 大字显示已激活/未激活,e-log 把每条检测命令与原始输出写入 `~/os-active/logs/<SN>-os-active.log`。
 
 ## 功能
 
@@ -135,7 +135,7 @@ R<{"content":"PASS;Windows 已激活;button确认","status":true,"opts":{...}}>R
 
 ## 日志
 
-- 运行目录下 `logs/os-active.log`: 检测明细(每条命令 + 原始输出 + 判定)
+- 本地固定目录 `~/os-active/logs/<SN>-os-active.log`(SN+项目名;避免从 U 盘运行时日志写到介质): 检测明细(每条命令 + 原始输出 + 判定)
 - `logs/bug.os-active.log`: panic 崩溃现场
 - GUI 底部展示日志文件路径与最新日志,一键打开日志目录
 

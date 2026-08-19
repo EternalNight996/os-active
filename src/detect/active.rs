@@ -176,7 +176,7 @@ fn check_kylin(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, Strin
   let act = if lic_success {
     judge(
       &lic_out,
-      &["已激活", "activated", "永久授权", "授权成功", "valid", "已授权"],
+      &["已激活", "activated", "永久授权", "授权成功", "已授权"],
       &["未激活", "not activated", "试用", "trial", "invalid", "expired", "未授权", "未激活"],
     )
   } else if kyinfo_success {
@@ -279,8 +279,9 @@ fn check_uos(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, String,
     judge(
       &q_out,
       // 官方输出:激活状态=免费授权/已激活/试用期;到期时间=终身有效/日期
-      &["已激活", "activated", "激活成功", "已授权", "免费授权", "active"],
-      &["未激活", "not activated", "未授权", "试用期", "试用", "trial", "expired", "已过期"],
+      // 精确词,避免宽泛子串误判(如 inactive 含 active)
+      &["已激活", "activated", "激活成功", "已授权", "免费授权", "正式授权"],
+      &["未激活", "not activated", "未授权", "试用期", "试用", "trial", "expired", "已过期", "inactive", "未激活"],
     )
   } else {
     Activation::Unknown

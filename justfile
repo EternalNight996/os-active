@@ -126,7 +126,7 @@ gen-packaging:
         '# 部分国产 OS(如统信 UOS 1070)X server 的 GLX 扩展损坏,任何 GLX 程序会 GLXBadContextTag 崩溃;EGL 不走 GLX 可绕开', \
         'BIN=/usr/lib/os-active/os-active.bin', \
         'cd "$HOME" || exit 1', \
-        'mkdir -p "$HOME/logs"', \
+        'mkdir -p "$HOME/os-active/logs"', \
         'run() { "$@"; rc=$?; [ "$rc" -eq 0 ] || [ "$rc" -eq 130 ]; }', \
         '# 1) 默认: GLX 优先(正常机器)', \
         'run "$BIN" "$@" && exit 0', \
