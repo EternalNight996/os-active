@@ -199,14 +199,7 @@ vm-install: deb
 
 # 打包成文件夹部署包(参考 TP100:主程序 + plugins(架构分层) + config + README/LICENSE)
 pack: build-win
-    @$v = (just version | Select-Object -Last 1).Trim(); $d = '{{dist_dir}}/os-active-pack-v' + $v; if (Test-Path $d) { Remove-Item -Recurse -Force $d }
-    @New-Item -ItemType Directory -Force -Path "$d/windows", "$d/tools", "$d/plugins" | Out-Null
-    @Copy-Item {{win_exe}} "$d/windows/"
-    @if (Test-Path tools) { Copy-Item tools/* "$d/tools/" -Recurse -Force }   # 工具完整打入(含用户自添)
-    @Copy-Item README.md, LICENSE, start.sh $d                                 # 说明文档
-    @if (Test-Path os-active.toml) { Copy-Item os-active.toml $d }
-    @Write-Host ('文件夹部署包: ' + (Resolve-Path $d).Path)
-    @Get-ChildItem $d -Recurse -File | Select-Object FullName | Out-String
+    @$v = (just version | Select-Object -Last 1).Trim(); $d = '{{dist_dir}}/os-active-pack-v' + $v; if (Test-Path $d) { Remove-Item -Recurse -Force $d }; New-Item -ItemType Directory -Force -Path "$d/windows", "$d/tools", "$d/plugins" | Out-Null; Copy-Item {{win_exe}} "$d/windows/"; if (Test-Path tools) { Copy-Item tools/* "$d/tools/" -Recurse -Force }; Copy-Item README.md, LICENSE, start.sh "$d/"; if (Test-Path os-active.toml) { Copy-Item os-active.toml "$d/" }; Write-Host ('文件夹部署包: ' + (Resolve-Path $d).Path); Get-ChildItem $d -Recurse -File | Select-Object FullName | Out-String
 # 清理构建产物(含打包目录)
 clean:
     cargo clean

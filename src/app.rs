@@ -115,6 +115,12 @@ impl App {
   fn poll(&mut self) {
     while let Ok(r) = self.rx.try_recv() {
       info!("检测完成: {} -> {}", r.activation.label(), r.summary);
+      // SN 非空校验(配置 [sn].require_sn)
+      if self.cfg.sn.require_sn && r.os.sn.is_empty() {
+        info!("[SN] 校验失败: 未读取到设备 SN(require_sn=true)");
+      } else if self.cfg.sn.require_sn {
+        info!("[SN] 校验通过: {}", r.os.sn);
+      }
       self.result = Some(r);
       self.checking = false;
       self.log_tail = read_log_tail(&self.log_path, 15);
@@ -353,9 +359,13 @@ impl App {
         ui.label("发行版 ID:");
         ui.label(&r.os.distro_id);
         ui.end_row();
-        if !r.os.sn.is_empty() {
+        {
           ui.label("SN:");
-          ui.label(RichText::new(r.os.sn.as_str()).color(Color32::from_rgb(0x2f, 0x6f, 0xcf)));
+          if r.os.sn.is_empty() {
+            ui.label(RichText::new("(未获取)").color(Color32::from_rgb(0xd0, 0x33, 0x33)));
+          } else {
+            ui.label(RichText::new(r.os.sn.as_str()).color(Color32::from_rgb(0x2f, 0x6f, 0xcf)));
+          }
           ui.label("");
           ui.label("");
           ui.end_row();
