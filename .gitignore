@@ -4,3 +4,7 @@
 /.dsh-vision-router
 *.log
 os-active.toml
+# tools 具体工具不上传 git(用户自行放置,参考 tools/README.md)
+/tools/*
+!/tools/
+!/tools/README.md
