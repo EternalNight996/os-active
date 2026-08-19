@@ -28,6 +28,8 @@ enum Phase {
   Detect,
   /// 检测完成且已激活,等待人工确认
   Confirm,
+  /// 检测完成但未激活(auto_close=false 时),等待重新检测/关闭
+  FailWait,
   /// 已确认,倒计时中(剩余秒数)
   Countdown { left: u64 },
   /// 已发关闭命令,等待退出
@@ -98,6 +100,8 @@ impl App {
       return;
     }
     self.checking = true;
+    self.phase = Phase::Detect;
+    self.result = None;
     info!("触发重新检测");
     let tx = self.tx.clone();
     std::thread::spawn(move || {
@@ -131,7 +135,14 @@ impl App {
       return;
     };
     if r.activation != Activation::Activated {
-      // 非激活:不进入确认流程(检测结论日志已在 poll 打过一次,此处避免每帧刷屏)
+      // FAIL(未激活等):auto_close=true -> 自动倒计时关闭;否则进入 FailWait 等待重新检测
+      if self.cfg.app.auto_close {
+        info!("auto_close=true: 未激活({}),自动倒计时关闭窗口", r.activation.label());
+        self.enter_countdown();
+      } else {
+        self.phase = Phase::FailWait;
+        info!("未激活({}),请点击重新检测或关闭窗口", r.activation.label());
+      }
       return;
     }
     if self.cfg.app.auto_close {
@@ -260,6 +271,27 @@ impl App {
               .clicked()
             {
               self.confirm_by_button();
+            }
+          }
+          Phase::FailWait => {
+            // 未激活:状态文字 + 重新检测按钮
+            let (text, color) = match &self.result {
+              Some(r) => (
+                r.activation.label(),
+                match r.activation {
+                  Activation::NotActivated => Color32::from_rgb(0xd0, 0x33, 0x33),
+                  Activation::NotApplicable => Color32::from_rgb(0x1e, 0x6f, 0xb8),
+                  _ => Color32::from_rgb(0x8a, 0x8a, 0x8a),
+                },
+              ),
+              None => ("检测中...", Color32::from_rgb(0x8a, 0x8a, 0x8a)),
+            };
+            ui.label(RichText::new(text).size(17.0).strong().color(color));
+            if ui
+              .add_sized([200.0, 40.0], egui::Button::new(RichText::new("重新检测").size(16.0).strong()))
+              .clicked()
+            {
+              self.trigger_detect();
             }
           }
           Phase::Countdown { left } => {

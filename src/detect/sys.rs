@@ -118,6 +118,42 @@ fn detect_windows() -> OsInfo {
 }
 
 
+
+/// 用 plugins/<arch>/ByoDmi 读取 DMI SN(解析 -smbiosinfo 的 Serial Number,需 root)
+#[cfg(target_os = "linux")]
+fn byodmi_sn() -> Option<String> {
+  let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+  let byodmi = exe_dir
+    .join("plugins")
+    .join(std::env::consts::ARCH)
+    .join("ByoDmi")
+    .join("ByoDmi");
+  if !byodmi.exists() {
+    return None;
+  }
+  let out = std::process::Command::new(&byodmi).arg("-smbiosinfo").output().ok()?;
+  let text = String::from_utf8_lossy(&out.stdout);
+  // 宽松匹配 Serial Number / SerialNumber / Serial 后的值
+  for line in text.lines() {
+    let l = line.trim();
+    let lower = l.to_lowercase();
+    if lower.contains("serial") && (l.contains(':') || l.contains('=')) {
+      let v = if let Some((_, v)) = l.split_once(':') {
+        v.trim().to_string()
+      } else if let Some((_, v)) = l.split_once('=') {
+        v.trim().to_string()
+      } else {
+        continue;
+      };
+      let v = v.trim();
+      if !v.is_empty() && !v.contains("None") && !v.contains("To be filled") && !v.contains("null") {
+        return Some(v.to_string());
+      }
+    }
+  }
+  None
+}
+
 /// 读 DMI 序列号文件并过滤无效值
 #[cfg(target_os = "linux")]
 fn read_dmi_serial(path: &str) -> Option<String> {
@@ -149,6 +185,10 @@ pub fn get_sn() -> Option<String> {
   }
   #[cfg(target_os = "linux")]
   {
+    // 0) 优先用 plugins/<arch>/ByoDmi 读取 DMI SN(对齐 TP100 烧录位置,需 root)
+    if let Some(s) = byodmi_sn() {
+      return Some(s);
+    }
     // 麒麟/统信基于 DMI,多来源探测(普通用户可读优先,无需 root)
     // 1) DMI product_serial
     if let Some(s) = read_dmi_serial("/sys/class/dmi/id/product_serial") {

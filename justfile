@@ -196,6 +196,17 @@ vm-install: deb
     {{vm_scp}} target/debian/*.deb {{vm_host}}:/tmp/
     {{vm_ssh}} {{vm_host}} "echo test123 | sudo -S dpkg -i /tmp/os-active_*.deb 2>&1 | tail -2; dpkg -l os-active | tail -1"
 
+
+# 打包成文件夹部署包(参考 TP100:主程序 + plugins(架构分层) + config + README/LICENSE)
+pack: build-win
+    @$v = (just version | Select-Object -Last 1).Trim(); $d = '{{dist_dir}}/os-active-pack-v' + $v; if (Test-Path $d) { Remove-Item -Recurse -Force $d }
+    @New-Item -ItemType Directory -Force -Path "$d/windows", "$d/plugins/x86_64/ByoDmi" | Out-Null
+    @Copy-Item {{win_exe}} "$d/windows/"
+    @Copy-Item plugins/x86_64/ByoDmi/* "$d/plugins/x86_64/ByoDmi/"
+    @Copy-Item README.md, LICENSE $d
+    @if (Test-Path os-active.toml) { Copy-Item os-active.toml $d }
+    @Write-Host ('文件夹部署包: ' + (Resolve-Path $d).Path)
+    @Get-ChildItem $d -Recurse -File | Select-Object FullName | Out-String
 # 清理构建产物(含打包目录)
 clean:
     cargo clean
