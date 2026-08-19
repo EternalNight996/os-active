@@ -199,8 +199,10 @@ pub fn get_sn() -> Option<String> {
   #[cfg(windows)]
   {
     // 用 std::process::Command 直接执行(e-utils Cmd 对 "powershell" 有 ExeType 特殊处理,会把 exe 当 -Command 执行)
+    use std::os::windows::process::CommandExt;
     if let Ok(out) = std::process::Command::new("powershell")
       .args(["-NoProfile", "-Command", "(Get-CimInstance Win32_BIOS).SerialNumber"])
+      .creation_flags(0x08000000) // CREATE_NO_WINDOW:release 禁止弹 cmd 窗口
       .output()
     {
       let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
