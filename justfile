@@ -204,6 +204,10 @@ pack: build-win
 # 打包双平台文件夹部署包(Windows + Linux,含 tools/README/start.sh)
 pack-all: build-win build-linux
     @$v = (just version | Select-Object -Last 1).Trim(); $d = '{{dist_dir}}/os-active-pack-all-v' + $v; if (Test-Path $d) { Remove-Item -Recurse -Force $d }; New-Item -ItemType Directory -Force -Path "$d/windows", "$d/linux", "$d/tools", "$d/plugins" | Out-Null; Copy-Item {{win_exe}} "$d/windows/"; Copy-Item {{linux_bin}} "$d/linux/"; if (Test-Path tools) { Copy-Item tools/* "$d/tools/" -Recurse -Force }; Copy-Item README.md, LICENSE, start.sh "$d/"; if (Test-Path os-active.toml) { Copy-Item os-active.toml "$d/" }; Write-Host ('双平台部署包: ' + (Resolve-Path $d).Path); Get-ChildItem $d -Recurse -File | Select-Object FullName | Out-String
+
+# 快速打包双平台(直接用现有 target 产物,不重新构建;需已 build-win + build-linux)
+pack-all-nobuild:
+    @$v = (just version | Select-Object -Last 1).Trim(); $d = '{{dist_dir}}/os-active-pack-all-v' + $v; if (Test-Path $d) { Remove-Item -Recurse -Force $d }; New-Item -ItemType Directory -Force -Path "$d/windows", "$d/linux", "$d/tools", "$d/plugins" | Out-Null; if (Test-Path {{win_exe}}) { Copy-Item {{win_exe}} "$d/windows/" } else { Write-Host '缺 Windows 产物: 先 just build-win' }; if (Test-Path {{linux_bin}}) { Copy-Item {{linux_bin}} "$d/linux/" } else { Write-Host '缺 Linux 产物: 先 just build-linux' }; if (Test-Path tools) { Copy-Item tools/* "$d/tools/" -Recurse -Force }; Copy-Item README.md, LICENSE, start.sh "$d/" -ErrorAction SilentlyContinue; if (Test-Path os-active.toml) { Copy-Item os-active.toml "$d/" }; Write-Host ('双平台部署包: ' + (Resolve-Path $d).Path); Get-ChildItem $d -Recurse -File | Select-Object FullName | Out-String
 # 清理构建产物(含打包目录)
 clean:
     cargo clean
