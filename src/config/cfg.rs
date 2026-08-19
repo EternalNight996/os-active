@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 pub const CFG_FNAME: &str = "os-active.toml";
 
 /// 默认配置表内容(自动生成时写入,含注释)
-const DEFAULT_CFG: &str = "# ============================================================\n# os-active 配置表(首次运行自动生成,修改后重启生效)\n# ============================================================\n[app]\n# PASS(激活成功并确认)后倒计时 N 秒自动关闭窗口\nclose_after_secs = 3\n# true:激活成功后自动确认并倒计时关闭,无需人工点击确认按钮\nauto_close = false\n\n[sn]\n# SN 工具(ByoDmi)路径,可自配;留空自动探测 tools/ByoDmi/<架构>/<os>/ByoDmi\n# tool_path = \"tools/ByoDmi/x86_64/linux/ByoDmi\"\n# 是否校验 SN 不为空(空则日志告警)\nrequire_sn = true\n
+const DEFAULT_CFG: &str = "# ============================================================\n# os-active 配置表(首次运行自动生成,修改后重启生效)\n# ============================================================\n[app]\n# PASS(激活成功并确认)后倒计时 N 秒自动关闭窗口\nclose_after_secs = 3\n# true:激活成功后自动确认并倒计时关闭,无需人工点击确认按钮\nauto_close = false\n\n[sn]\n# SN 工具(ByoDmi)路径,留空自动探测;可填绝对路径或相对 tools/ 的路径\ntool_path = \"\"\n# 是否校验 SN 不为空(空则日志告警)\nrequire_sn = true\n
 ";
 
 fn default_close_secs() -> u64 {

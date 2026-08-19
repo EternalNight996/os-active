@@ -88,7 +88,7 @@ auto_close = false      # true:激活成功自动确认并倒计时关闭;false:
 
 [sn]
 # SN 工具(ByoDmi)路径,可自配;留空自动探测 tools/ByoDmi/<架构>/<os>/ByoDmi
-# tool_path = "tools/ByoDmi/x86_64/linux/ByoDmi"
+tool_path = ""    # SN 工具路径,留空自动探测
 require_sn = true      # 是否校验 SN 不为空(空则日志告警)
 ```
 
