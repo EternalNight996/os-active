@@ -1,4 +1,6 @@
 //! 系统识别:Linux 解析 /etc/os-release;Windows 查询注册表 ProductName
+#[cfg(target_os = "linux")]
+use e_log::preload::*;
 use super::model::OsInfo;
 #[cfg(any(windows, target_os = "linux"))]
 use e_utils::cmd::Cmd;
@@ -122,14 +124,19 @@ fn detect_windows() -> OsInfo {
 /// 用 plugins/<arch>/ByoDmi 读取 DMI SN(解析 -smbiosinfo 的 Serial Number,需 root)
 #[cfg(target_os = "linux")]
 fn byodmi_sn() -> Option<String> {
-  let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
-  // 层级:工具名 -> 架构 -> 操作系统 -> 具体工具 (tools/ByoDmi/x86_64/linux/ByoDmi)
-  let byodmi = exe_dir
-    .join("tools")
-    .join("ByoDmi")
-    .join(std::env::consts::ARCH)
-    .join(std::env::consts::OS)
-    .join("ByoDmi");
+  // 路径:配置 [sn].tool_path 优先,否则默认探测 tools/ByoDmi/<架构>/<os>/ByoDmi
+  let byodmi = match sn_tool_path() {
+    Some(p) => std::path::PathBuf::from(p),
+    None => {
+      let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+      exe_dir
+        .join("tools")
+        .join("ByoDmi")
+        .join(std::env::consts::ARCH)
+        .join(std::env::consts::OS)
+        .join("ByoDmi")
+    }
+  };
   if !byodmi.exists() {
     return None;
   }
@@ -149,6 +156,24 @@ fn byodmi_sn() -> Option<String> {
       };
       let v = v.trim();
       if !v.is_empty() && !v.contains("None") && !v.contains("To be filled") && !v.contains("null") {
+        return Some(v.to_string());
+      }
+    }
+  }
+  None
+}
+
+
+/// 从配置文件 os-active.toml 读取 [sn].tool_path(自配 SN 工具路径)
+#[cfg(target_os = "linux")]
+fn sn_tool_path() -> Option<String> {
+  let cfg = std::env::current_dir().ok()?.join("os-active.toml");
+  let content = std::fs::read_to_string(cfg).ok()?;
+  for line in content.lines() {
+    let l = line.trim();
+    if let Some((_, v)) = l.split_once("tool_path") {
+      let v = v.trim().trim_start_matches('=').trim().trim_matches('"').trim();
+      if !v.is_empty() {
         return Some(v.to_string());
       }
     }
@@ -187,27 +212,34 @@ pub fn get_sn() -> Option<String> {
   }
   #[cfg(target_os = "linux")]
   {
-    // 0) 优先用 plugins/<arch>/ByoDmi 读取 DMI SN(对齐 TP100 烧录位置,需 root)
-    if let Some(s) = byodmi_sn() {
+    // 多来源读取(优先级):ByoDmi -> product_serial -> board_serial -> dmidecode -> machine-id
+    // 校验:过滤占位符,记录各来源值
+    let byodmi = byodmi_sn();
+    let prod = read_dmi_serial("/sys/class/dmi/id/product_serial");
+    let board = read_dmi_serial("/sys/class/dmi/id/board_serial");
+    // 校验明细(日志)
+    info!(
+      "SN 校验: ByoDmi={:?} product_serial={:?} board_serial={:?}",
+      byodmi, prod, board
+    );
+    // 优先 ByoDmi(对齐 TP100 烧录位置),其次 product_serial,再 board_serial
+    if let Some(s) = byodmi {
       return Some(s);
     }
-    // 麒麟/统信基于 DMI,多来源探测(普通用户可读优先,无需 root)
-    // 1) DMI product_serial
-    if let Some(s) = read_dmi_serial("/sys/class/dmi/id/product_serial") {
+    if let Some(s) = prod {
       return Some(s);
     }
-    // 2) DMI board_serial(主板序列号,麒麟/统信部分机器在此)
-    if let Some(s) = read_dmi_serial("/sys/class/dmi/id/board_serial") {
+    if let Some(s) = board {
       return Some(s);
     }
-    // 3) dmidecode(需 root,兜底)
+    // dmidecode(需 root,兜底)
     if let Ok(o) = Cmd::new("dmidecode").args(["-s", "system-serial-number"]).output() {
       let s = o.stdout.trim().to_string();
       if !s.is_empty() {
         return Some(s);
       }
     }
-    // 4) machine-id(机器唯一 ID 兜底,非厂商 SN 但可标识设备)
+    // machine-id(机器唯一 ID 兜底)
     if let Ok(s) = std::fs::read_to_string("/etc/machine-id") {
       let s = s.trim().to_string();
       if !s.is_empty() {

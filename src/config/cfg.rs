@@ -24,11 +24,15 @@ pub struct AppCfg {
   /// [app] 表
   #[serde(default)]
   pub app: AppInner,
+  /// [sn] 表(SN 读取配置)
+  #[serde(default)]
+  pub sn: SnInner,
 }
 impl Default for AppCfg {
   fn default() -> Self {
     Self {
       app: AppInner::default(),
+      sn: SnInner::default(),
     }
   }
 }
@@ -48,6 +52,21 @@ impl Default for AppInner {
     Self {
       close_after_secs: default_close_secs(),
       auto_close: false,
+    }
+  }
+}
+
+/// [sn] 表配置项(SN 读取)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnInner {
+  /// SN 工具(ByoDmi)路径;留空则自动探测 tools/<工具>/<架构>/<os>/<工具>
+  #[serde(default)]
+  pub tool_path: Option<String>,
+}
+impl Default for SnInner {
+  fn default() -> Self {
+    Self {
+      tool_path: None,
     }
   }
 }
