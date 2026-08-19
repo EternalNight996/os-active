@@ -170,6 +170,8 @@ fn check_kylin(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, Strin
   let kyinfo = read_file_check("/etc/.kyinfo", "麒麟授权文件(.kyinfo)");
   let kyact = read_file_check("/etc/.kyactivation", "麒麟激活码文件(.kyactivation)");
   let check = run_check("麒麟激活状态查询", "kylin_activation_check", &[], None);
+  let kverify = run_check("麒麟授权到期查询", "kylin-verify", &[], None);
+  let kverify_out = kverify.output.clone();
   let (lic_success, lic_out) = (lic.success, lic.output.clone());
   let (kyinfo_success, kyinfo_out) = (kyinfo.success, kyinfo.output.clone());
   let kyact_success = kyact.success;
@@ -179,6 +181,7 @@ fn check_kylin(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, Strin
   items.push(kyinfo);
   items.push(kyact);
   items.push(check);
+  items.push(kverify);
 
   // 判定:已激活必须有证据;.kyinfo 的 term 只是预置授权期限,不代表已激活(V11 实测:term 未来≠已激活)
   let act = if lic_success {
@@ -206,8 +209,8 @@ fn check_kylin(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, Strin
   } else {
     Activation::Unknown
   };
-  // 授权到期时间(.kyinfo term 字段,官方:term=到期期限)
-  let expire = extract_kyinfo_term(&kyinfo_out);
+  // 授权到期时间:优先 .kyinfo term(官方:term=到期期限),kylin-verify 输出兜底
+  let expire = extract_kyinfo_term(&kyinfo_out).or_else(|| extract_uos_expire(&kverify_out));
   let summary = match act {
     Activation::Activated => "银河麒麟已激活".to_string(),
     Activation::NotActivated => "银河麒麟未激活".to_string(),
