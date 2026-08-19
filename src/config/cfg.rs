@@ -12,6 +12,9 @@ use serde::{Deserialize, Serialize};
 /// 配置文件路径(运行目录)
 pub const CFG_FNAME: &str = "os-active.toml";
 
+/// 默认配置表内容(自动生成时写入,含注释)
+const DEFAULT_CFG: &str = "# ============================================================\n# os-active 配置表(首次运行自动生成,修改后重启生效)\n# ============================================================\n[app]\n# PASS(激活成功并确认)后倒计时 N 秒自动关闭窗口\nclose_after_secs = 3\n# true:激活成功后自动确认并倒计时关闭,无需人工点击确认按钮\nauto_close = false\n";
+
 fn default_close_secs() -> u64 {
   3
 }
@@ -50,9 +53,14 @@ impl Default for AppInner {
 }
 
 impl AppCfg {
-  /// 从运行目录加载 os-active.toml;文件缺失/解析失败时用默认值
+  /// 从运行目录加载 os-active.toml;文件缺失时自动生成默认配置表,解析失败时用默认值
   pub fn load() -> Self {
     let path = std::env::current_dir().unwrap_or_default().join(CFG_FNAME);
+    if !path.exists() {
+      // 自动生成默认配置表(含注释说明),便于用户查看可配置项
+      let _ = std::fs::write(&path, DEFAULT_CFG);
+      info!("未找到配置文件,已自动生成默认配置表: {}", path.display());
+    }
     match std::fs::read_to_string(&path) {
       Ok(s) => match toml::from_str::<Self>(&s) {
         Ok(cfg) => {
@@ -65,7 +73,7 @@ impl AppCfg {
         }
       },
       Err(_) => {
-        info!("未找到配置文件 {},使用默认配置(auto_close=false, close_after_secs=3)", path.display());
+        warn!("配置文件读取失败,使用默认配置");
         Self::default()
       }
     }
