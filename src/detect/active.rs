@@ -168,25 +168,40 @@ fn check_linux(os: &OsInfo) -> (Activation, Vec<CheckItem>, String, Option<Strin
 fn check_kylin(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, String, Option<String>) {
   let lic = run_check("麒麟授权查询", "licence", &["-l"], None);
   let kyinfo = read_file_check("/etc/.kyinfo", "麒麟授权文件(.kyinfo)");
+  let kyact = read_file_check("/etc/.kyactivation", "麒麟激活码文件(.kyactivation)");
+  let check = run_check("麒麟激活状态查询", "kylin_activation_check", &[], None);
   let (lic_success, lic_out) = (lic.success, lic.output.clone());
   let (kyinfo_success, kyinfo_out) = (kyinfo.success, kyinfo.output.clone());
+  let kyact_success = kyact.success;
+  let check_success = check.success;
+  let check_out = check.output.clone();
   items.push(lic);
   items.push(kyinfo);
+  items.push(kyact);
+  items.push(check);
 
+  // 判定:已激活必须有证据;.kyinfo 的 term 只是预置授权期限,不代表已激活(V11 实测:term 未来≠已激活)
   let act = if lic_success {
     judge(
       &lic_out,
       &["已激活", "activated", "永久授权", "授权成功", "已授权"],
       &["未激活", "not activated", "试用", "trial", "invalid", "expired", "未授权", "未激活"],
     )
+  } else if kyact_success {
+    // 激活码文件存在 -> 已激活(权威)
+    Activation::Activated
+  } else if check_success {
+    // kylin_activation_check 查看激活状态
+    judge(
+      &check_out,
+      &["已激活", "activated", "永久授权", "已授权", "激活成功"],
+      &["未激活", "not activated", "试用", "trial", "未授权", "已过期"],
+    )
   } else if kyinfo_success {
-    // licence 命令不可用时解析 /etc/.kyinfo 的授权到期时间(to=term=YYYY-MM-DD):
-    //   term >= 今天 -> 已激活(有效期内);term < 今天 -> 未激活(已过期);
-    //   解析不出 term -> 无法判定(.kyinfo 存在不代表已激活,过期授权文件也会留存)
+    // term 过期 -> 未激活;term 存在但无激活证据 -> 未激活(预置期限非激活证明)
     match kyinfo_expire_days(&kyinfo_out) {
-      Some(expire) if expire >= today_days() => Activation::Activated,
-      Some(_) => Activation::NotActivated,
-      None => Activation::Unknown,
+      Some(expire) if expire < today_days() => Activation::NotActivated,
+      _ => Activation::NotActivated,
     }
   } else {
     Activation::Unknown
