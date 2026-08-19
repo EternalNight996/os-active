@@ -203,7 +203,7 @@ pack: build-win
     @New-Item -ItemType Directory -Force -Path "$d/windows", "$d/tools/ByoDmi/x86_64/linux" | Out-Null
     @Copy-Item {{win_exe}} "$d/windows/"
     @Copy-Item tools/ByoDmi/x86_64/linux/* "$d/plugins/x86_64/ByoDmi/"
-    @Copy-Item README.md, LICENSE $d
+    @Copy-Item README.md, LICENSE, start.sh $d
     @if (Test-Path os-active.toml) { Copy-Item os-active.toml $d }
     @Write-Host ('文件夹部署包: ' + (Resolve-Path $d).Path)
     @Get-ChildItem $d -Recurse -File | Select-Object FullName | Out-String
