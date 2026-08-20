@@ -48,3 +48,9 @@ sudo ./ByoDmi -unlock         # 解锁
 ```
 
 > 需 root 权限;os-active 程序自动用 `-smbiosinfo` 读取 SN。
+## ⚠️ ByoDmi 平台限制
+
+- ByoDmi 是产测(TP100)专用 BIOS/SMBIOS 工具,直接操作特定主板 Flash/SMI,**仅兼容对应产测 BIOS**
+- **虚拟机 / 海光 / 兆芯 / 非产测平台 无法运行(段错误)属正常**,请勿强求
+- os-active 检测到 ByoDmi 异常会自动回退 DMI 直读(`product_serial`/`board_serial`/`dmidecode`/`machine-id`)
+- 虚拟机上无需放置 ByoDmi,`[sn].tool_path` 留空即可
