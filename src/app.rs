@@ -296,7 +296,7 @@ impl App {
                 match r.activation {
                   Activation::NotActivated => Color32::from_rgb(0xd0, 0x33, 0x33),
                   Activation::NotApplicable => Color32::from_rgb(0x1e, 0x6f, 0xb8),
-                  _ => Color32::from_rgb(0x8a, 0x8a, 0x8a),
+                  _ => Color32::from_rgb(0xe6, 0xa2, 0x3c),
                 },
               ),
               None => ("检测中...", Color32::from_rgb(0x8a, 0x8a, 0x8a)),
@@ -429,12 +429,17 @@ impl App {
             for it in &r.items {
               ui.label(&it.name);
               ui.label(RichText::new(&it.command).monospace().size(12.0));
+              // 判定列:执行失败(可能未安装)->黄色警告;成功->灰色
               let vcolor = if it.success {
                 Color32::from_gray(150)
               } else {
-                Color32::from_rgb(0xd0, 0x33, 0x33)
+                Color32::from_rgb(0xe6, 0xa2, 0x3c) // 黄:命令未安装/执行失败
               };
               ui.label(RichText::new(&it.verdict).color(vcolor));
+              if !it.success {
+                // 未安装/失败提示
+                let _ = it.verdict.as_str();
+              }
               let out_short = truncate(&it.output, 160);
               let resp = ui.add(
                 egui::Label::new(RichText::new(&out_short).monospace().size(12.0)).truncate(),

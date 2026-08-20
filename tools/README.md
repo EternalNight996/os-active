@@ -34,3 +34,17 @@ tools/
 5. `/etc/machine-id`(兜底)
 
 > Windows 用 `Win32_BIOS.SerialNumber`。
+## ByoDmi 手动命令(参考 tools/ByoDmi/<架构>/<os>/README.md)
+
+```bash
+cd tools/ByoDmi/x86_64/linux
+sudo ./ByoDmi -h              # 帮助
+sudo ./ByoDmi -smbiosinfo     # 查看全部 SMBIOS 信息(含 Serial Number)
+sudo ./ByoDmi -view 1 0       # 查看 Type1(System)信息
+sudo ./ByoDmi -type 1 0 5 <SN> # 烧录 SN(写 Type1 Serial Number)
+sudo ./ByoDmi -type 1 0 8 <uuid> # 写 UUID
+sudo ./ByoDmi -lock           # 锁定 Flash 区域
+sudo ./ByoDmi -unlock         # 解锁
+```
+
+> 需 root 权限;os-active 程序自动用 `-smbiosinfo` 读取 SN。
