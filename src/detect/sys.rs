@@ -279,7 +279,6 @@ pub fn probe_sn() -> (Option<String>, Vec<CheckItem>, String) {
       (&prod, "DMI product_serial"),
       (&board, "DMI board_serial"),
       (&dmidec, "dmidecode"),
-      (&mid, "machine-id"),
     ] {
       if sn.is_none() {
         if let Some(s) = p {
@@ -288,7 +287,7 @@ pub fn probe_sn() -> (Option<String>, Vec<CheckItem>, String) {
         }
       }
     }
-    info!("SN 校验: ByoDmi={byodmi:?} product_serial={prod:?} board_serial={board:?} dmidecode={dmidec:?} machine-id={mid:?} -> 采用:{source}");
+    info!("SN 校验: ByoDmi={byodmi:?} product_serial={prod:?} board_serial={board:?} dmidecode={dmidec:?} -> 采用:{source}");
   }
 
   #[cfg(windows)]
