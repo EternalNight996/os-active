@@ -16,6 +16,8 @@ pub struct OsInfo {
   pub pretty: String,
   /// 设备序列号(SN,获取不到为空)
   pub sn: String,
+  /// CPU(海光 Hygon / 兆芯 Zhaoxin / Intel / AMD ...)
+  pub cpu: String,
 }
 
 /// 激活状态

@@ -365,6 +365,13 @@ impl App {
         ui.end_row();
         ui.label("架构:");
         ui.label(&r.os.arch);
+        if !r.os.cpu.is_empty() {
+          ui.label("CPU:");
+          ui.label(&r.os.cpu);
+        } else {
+          ui.label("CPU:");
+          ui.label("");
+        }
         ui.label("发行版 ID:");
         ui.label(&r.os.distro_id);
         ui.end_row();

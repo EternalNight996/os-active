@@ -24,6 +24,7 @@ pub fn detect_os() -> OsInfo {
       distro_id: std::env::consts::OS.to_string(),
       pretty: String::new(),
       sn: String::new(),
+      cpu: String::new(),
     }
   }
 }
@@ -84,6 +85,7 @@ fn detect_linux() -> OsInfo {
     distro_id: id,
     pretty,
     sn: get_sn().unwrap_or_default(),
+    cpu: get_cpu(),
   }
 }
 
@@ -116,6 +118,7 @@ fn detect_windows() -> OsInfo {
     distro_id: "windows".to_string(),
     pretty,
     sn: get_sn().unwrap_or_default(),
+    cpu: get_cpu(),
   }
 }
 
@@ -278,5 +281,61 @@ pub fn get_sn() -> Option<String> {
   #[cfg(not(any(target_os = "linux", windows)))]
   {
     None
+  }
+}
+
+/// 识别 CPU 型号(国产:海光 Hygon / 兆芯 Zhaoxin;Intel/AMD)
+pub fn get_cpu() -> String {
+  #[cfg(target_os = "linux")]
+  {
+    if let Ok(s) = std::fs::read_to_string("/proc/cpuinfo") {
+      let mut vendor = String::new();
+      for line in s.lines() {
+        let l = line.trim();
+        if let Some((k, v)) = l.split_once(':') {
+          let k = k.trim();
+          let v = v.trim();
+          if k == "model name" && !vendor.is_empty() {
+            return format!("{v} ({vendor})");
+          }
+          if k == "vendor_id" {
+            vendor = if v.contains("Hygon") {
+              "海光 Hygon".to_string()
+            } else if v.contains("Centaur") {
+              "兆芯 Zhaoxin".to_string()
+            } else if v.contains("GenuineIntel") {
+              "Intel".to_string()
+            } else if v.contains("AuthenticAMD") {
+              "AMD".to_string()
+            } else {
+              v.to_string()
+            };
+          }
+        }
+      }
+      if !vendor.is_empty() {
+        return vendor;
+      }
+    }
+    String::new()
+  }
+  #[cfg(windows)]
+  {
+    use std::os::windows::process::CommandExt;
+    if let Ok(out) = std::process::Command::new("powershell")
+      .args(["-NoProfile", "-Command", "(Get-CimInstance Win32_Processor).Name"])
+      .creation_flags(0x08000000)
+      .output()
+    {
+      let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+      if !s.is_empty() {
+        return s;
+      }
+    }
+    String::new()
+  }
+  #[cfg(not(any(target_os = "linux", windows)))]
+  {
+    String::new()
   }
 }

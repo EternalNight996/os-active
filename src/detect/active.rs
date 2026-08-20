@@ -171,7 +171,7 @@ fn check_kylin(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, Strin
   let kyact = read_file_check("/etc/.kyactivation", "麒麟激活码文件(.kyactivation)");
   let check = run_check("麒麟激活状态查询", "kylin_activation_check", &[], None);
   let kverify = run_check("麒麟授权到期查询", "kylin-verify", &[], None);
-  let kverify_out = kverify.output.clone();
+  let (kverify_success, kverify_out) = (kverify.success, kverify.output.clone());
   let (lic_success, lic_out) = (lic.success, lic.output.clone());
   let (kyinfo_success, kyinfo_out) = (kyinfo.success, kyinfo.output.clone());
   let kyact_success = kyact.success;
@@ -184,7 +184,7 @@ fn check_kylin(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, Strin
   items.push(kverify);
 
   // 判定:已激活必须有证据;.kyinfo 的 term 只是预置授权期限,不代表已激活(V11 实测:term 未来≠已激活)
-  let act = if lic_success {
+  let mut act = if lic_success {
     judge(
       &lic_out,
       &["已激活", "activated", "永久授权", "授权成功", "已授权"],
@@ -193,22 +193,44 @@ fn check_kylin(items: &mut Vec<CheckItem>) -> (Activation, Vec<CheckItem>, Strin
   } else if kyact_success {
     // 激活码文件存在 -> 已激活(权威)
     Activation::Activated
-  } else if check_success {
-    // kylin_activation_check 查看激活状态
-    judge(
-      &check_out,
-      &["已激活", "activated", "永久授权", "已授权", "激活成功"],
-      &["未激活", "not activated", "试用", "trial", "未授权", "已过期"],
-    )
-  } else if kyinfo_success {
-    // term 过期 -> 未激活;term 存在但无激活证据 -> 未激活(预置期限非激活证明)
-    match kyinfo_expire_days(&kyinfo_out) {
-      Some(expire) if expire < today_days() => Activation::NotActivated,
-      _ => Activation::NotActivated,
-    }
   } else {
     Activation::Unknown
   };
+  // kylin_activation_check 输出非空才判定(空输出=普通用户无权限,回退后续来源)
+  if act == Activation::Unknown && check_success && !check_out.trim().is_empty() {
+    act = judge(
+      &check_out,
+      &["已激活", "activated", "永久授权", "已授权", "激活成功"],
+      &["未激活", "not activated", "试用", "trial", "未授权", "已过期"],
+    );
+  }
+  // nklicadm -s 查看认证状态(官方命令)
+  if act == Activation::Unknown {
+    let nk = run_check("麒麟认证状态(nklicadm)", "nklicadm", &["-s"], None);
+    let (nk_success, nk_out) = (nk.success, nk.output.clone());
+    items.push(nk);
+    if nk_success && !nk_out.trim().is_empty() {
+      act = judge(
+        &nk_out,
+        &["已激活", "activated", "已认证", "永久授权", "已授权", "激活成功"],
+        &["未激活", "not activated", "未认证", "未授权", "已过期", "试用", "trial"],
+      );
+    }
+  }
+  // kylin-verify 服务周期到期 -> 未激活
+  if act == Activation::Unknown && kverify_success && !kverify_out.trim().is_empty() {
+    let kv = kverify_out.to_lowercase();
+    if kv.contains("服务周期已到") || kv.contains("已到") || kv.contains("截至") || kv.contains("已过期") {
+      act = Activation::NotActivated;
+    }
+  }
+  // term 过期 -> 未激活
+  if act == Activation::Unknown && kyinfo_success {
+    match kyinfo_expire_days(&kyinfo_out) {
+      Some(expire) if expire < today_days() => act = Activation::NotActivated,
+      _ => act = Activation::NotActivated,
+    }
+  }
   // 授权到期时间:优先 .kyinfo term(官方:term=到期期限),kylin-verify 输出兜底
   let expire = extract_kyinfo_term(&kyinfo_out).or_else(|| extract_uos_expire(&kverify_out));
   let summary = match act {
