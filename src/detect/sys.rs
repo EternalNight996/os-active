@@ -140,7 +140,18 @@ fn byodmi_sn() -> Option<String> {
   if !byodmi.exists() {
     return None;
   }
-  let out = std::process::Command::new(&byodmi).arg("-smbiosinfo").output().ok()?;
+  let out = match std::process::Command::new(&byodmi).arg("-smbiosinfo").output() {
+    Ok(o) => o,
+    Err(e) => {
+      info!("[SN] ByoDmi 执行失败(可能未安装或平台不支持): {e}");
+      return None;
+    }
+  };
+  if !out.status.success() {
+    // 段错误/异常退出(信号 11 等):记录并回退其他 SN 来源
+    info!("[SN] ByoDmi 执行异常(退出码 {:?}),回退其他 SN 来源", out.status.code());
+    return None;
+  }
   let text = String::from_utf8_lossy(&out.stdout);
   // 精确匹配 Type1 Serial Number 字段(排除 UUID/handle 等其他 hex 字段)
   for line in text.lines() {
