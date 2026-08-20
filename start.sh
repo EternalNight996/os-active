@@ -1,15 +1,25 @@
 #!/bin/bash
-# os-active 启动脚本(改造自 TP100 YK-PC-TP100 start.sh)
-# 功能: root 提权(DMI SN 读取/ByoDmi) + 图形会话环境保留 + EGL 三级显示回退 + 输入法适配
+# os-active 启动脚本
+# 部署结构: start.sh 在包根,主程序在 linux/os-active(或同目录 os-active)
+# 功能: 定位主程序 + root 提权(读 DMI SN) + 图形会话保留 + EGL 三级显示回退 + 输入法适配
 
 ROOT_PATH=$(cd "$(dirname "$0")"; pwd)
-EXEC_NAME=os-active
-LOG_DIR=$ROOT_PATH/logs
 
-# ---- 提权: 非 root 用 sudo 提权(root 才能读 DMI Serial / 运行 ByoDmi) ----
+# ---- 定位主程序:优先 linux/os-active(部署包),其次同目录 os-active ----
+if [ -x "$ROOT_PATH/linux/os-active" ]; then
+  BIN="$ROOT_PATH/linux/os-active"
+elif [ -x "$ROOT_PATH/os-active" ]; then
+  BIN="$ROOT_PATH/os-active"
+else
+  echo "错误: 未找到 os-active 主程序(期望 linux/os-active 或 os-active)"
+  exit 1
+fi
+BIN_DIR=$(cd "$(dirname "$BIN")"; pwd)
+LOG_DIR=$BIN_DIR/logs
+
+# ---- 提权: 非 root 用 sudo 提权(root 才能读 DMI Serial) ----
 if [ "$EUID" -ne 0 ] && [ "$1" != "--root-mode" ]; then
     ORIGINAL_USER="$USER"
-    # 保留图形会话环境(兼容 X11 / Wayland)
     DISPLAY_ENV=""; [ -n "$DISPLAY" ] && DISPLAY_ENV="DISPLAY=$DISPLAY"
     XAUTH_ENV=""; [ -n "$XAUTHORITY" ] && XAUTH_ENV="XAUTHORITY=$XAUTHORITY"
     DBUS_ENV=""; [ -n "$DBUS_SESSION_BUS_ADDRESS" ] && DBUS_ENV="DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"
@@ -26,7 +36,7 @@ if [ "$EUID" -ne 0 ] && [ "$1" != "--root-mode" ]; then
 fi
 
 # 清理旧进程
-pkill -f ${EXEC_NAME} 2>/dev/null || true
+pkill -f "$(basename "$BIN")" 2>/dev/null || true
 
 # ---- 输入法检测(egui 中文输入) ----
 DETECT_USER="${ORIGINAL_USER:-$USER}"
@@ -36,15 +46,16 @@ elif pgrep -u "$DETECT_USER" fcitx > /dev/null 2>&1; then
     export QT_IM_MODULE=fcitx; export GTK_IM_MODULE=fcitx; export XMODIFIERS="@im=fcitx"
 fi
 
-cd "$ROOT_PATH" || exit 1
+# 工作目录 = 主程序目录,日志落程序目录 logs
+cd "$BIN_DIR" || exit 1
 mkdir -p "$LOG_DIR"
 
 # ---- EGL 三级显示回退(国产 OS GLX 假成功崩溃) ----
 run() { "$@"; rc=$?; [ "$rc" -eq 0 ] || [ "$rc" -eq 130 ]; }
-run "${ROOT_PATH}/${EXEC_NAME}" "$@" && exit 0
+run "$BIN" "$@" && exit 0
 echo "[os-active] GLX 模式失败(exit $rc),尝试 EGL..."
-run env E_AUTOTEST_GL=egl "${ROOT_PATH}/${EXEC_NAME}" "$@" && exit 0
+run env E_AUTOTEST_GL=egl "$BIN" "$@" && exit 0
 echo "[os-active] EGL 模式失败(exit $rc),尝试 EGL + 软件渲染..."
-run env E_AUTOTEST_GL=egl LIBGL_ALWAYS_SOFTWARE=1 "${ROOT_PATH}/${EXEC_NAME}" "$@" && exit 0
+run env E_AUTOTEST_GL=egl LIBGL_ALWAYS_SOFTWARE=1 "$BIN" "$@" && exit 0
 echo "[os-active] 所有显示后端均失败,请检查日志: $LOG_DIR"
 exit 1
