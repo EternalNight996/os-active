@@ -1,7 +1,7 @@
 //! 系统识别:Linux 解析 /etc/os-release;Windows 查询注册表 ProductName
 #[cfg(target_os = "linux")]
 use e_log::preload::*;
-use super::model::OsInfo;
+use super::model::{CheckItem, OsInfo};
 #[cfg(any(windows, target_os = "linux"))]
 use e_utils::cmd::Cmd;
 
@@ -25,6 +25,7 @@ pub fn detect_os() -> OsInfo {
       pretty: String::new(),
       sn: String::new(),
       cpu: String::new(),
+      sn_source: String::new(),
     }
   }
 }
@@ -86,6 +87,7 @@ fn detect_linux() -> OsInfo {
     pretty,
     sn: get_sn().unwrap_or_default(),
     cpu: get_cpu(),
+    sn_source: String::new(),
   }
 }
 
@@ -224,67 +226,105 @@ fn read_dmi_serial(path: &str) -> Option<String> {
 
 /// 获取设备序列号(SN):Windows BIOS SerialNumber;Linux DMI product_serial(优先)/dmidecode
 /// 获取不到返回 None(空 SN 时日志用默认名)
-pub fn get_sn() -> Option<String> {
-  #[cfg(windows)]
-  {
-    // 用 std::process::Command 直接执行(e-utils Cmd 对 "powershell" 有 ExeType 特殊处理,会把 exe 当 -Command 执行)
-    use std::os::windows::process::CommandExt;
-    if let Ok(out) = std::process::Command::new("powershell")
-      .args(["-NoProfile", "-Command", "(Get-CimInstance Win32_BIOS).SerialNumber"])
-      .creation_flags(0x08000000) // CREATE_NO_WINDOW:release 禁止弹 cmd 窗口
-      .output()
-    {
-      let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-      if !s.is_empty() && !s.eq_ignore_ascii_case("to be filled by o.e.m.") {
-        return Some(s);
-      }
-    }
-    None
-  }
+/// 探测 SN,返回 (SN, 各来源明细, 采用来源)
+pub fn probe_sn() -> (Option<String>, Vec<CheckItem>, String) {
+  let mut probes: Vec<CheckItem> = vec![];
+  let mut sn: Option<String> = None;
+  let mut source = "未获取".to_string();
+
   #[cfg(target_os = "linux")]
   {
-    // 多来源读取(优先级):ByoDmi -> product_serial -> board_serial -> dmidecode -> machine-id
-    // 校验:过滤占位符,记录各来源值
+    // 1) ByoDmi
     let byodmi = byodmi_sn();
+    match &byodmi {
+      Some(s) => probes.push(CheckItem::new("SN-ByoDmi", "ByoDmi -smbiosinfo", true, s.clone(), "成功")),
+      None => probes.push(CheckItem::new("SN-ByoDmi", "ByoDmi -smbiosinfo", false, "不可用(未放置工具或平台不支持)".to_string(), "跳过")),
+    }
+    // 2) product_serial
     let prod = read_dmi_serial("/sys/class/dmi/id/product_serial");
+    match &prod {
+      Some(s) => probes.push(CheckItem::new("SN-DMI序列号", "cat /sys/class/dmi/id/product_serial", true, s.clone(), "成功")),
+      None => probes.push(CheckItem::new("SN-DMI序列号", "cat /sys/class/dmi/id/product_serial", false, "读取失败(需 root 权限或虚拟机无 SN)".to_string(), "跳过")),
+    }
+    // 3) board_serial
     let board = read_dmi_serial("/sys/class/dmi/id/board_serial");
-    // 校验明细(日志)
-    info!(
-      "SN 校验: ByoDmi={:?} product_serial={:?} board_serial={:?}",
-      byodmi, prod, board
-    );
-    // 优先 ByoDmi(对齐 TP100 烧录位置),其次 product_serial,再 board_serial
-    if let Some(s) = byodmi {
-      return Some(s);
+    match &board {
+      Some(s) => probes.push(CheckItem::new("SN-主板序列号", "cat /sys/class/dmi/id/board_serial", true, s.clone(), "成功")),
+      None => probes.push(CheckItem::new("SN-主板序列号", "cat /sys/class/dmi/id/board_serial", false, "读取失败(需 root 权限或虚拟机无 SN)".to_string(), "跳过")),
     }
-    if let Some(s) = prod {
-      return Some(s);
+    // 4) dmidecode
+    let dmidec = Cmd::new("dmidecode")
+      .args(["-s", "system-serial-number"])
+      .output()
+      .ok()
+      .and_then(|o| {
+        let s = o.stdout.trim().to_string();
+        sanitize_sn(&s)
+      });
+    match &dmidec {
+      Some(s) => probes.push(CheckItem::new("SN-dmidecode", "dmidecode -s system-serial-number", true, s.clone(), "成功")),
+      None => probes.push(CheckItem::new("SN-dmidecode", "dmidecode -s system-serial-number", false, "读取失败(需 root 权限)".to_string(), "跳过")),
     }
-    if let Some(s) = board {
-      return Some(s);
+    // 5) machine-id
+    let mid = std::fs::read_to_string("/etc/machine-id")
+      .ok()
+      .map(|s| s.trim().to_string());
+    match &mid {
+      Some(s) => probes.push(CheckItem::new("SN-machine-id", "cat /etc/machine-id", true, s.clone(), "兜底(非厂商SN)")),
+      None => probes.push(CheckItem::new("SN-machine-id", "cat /etc/machine-id", false, "读取失败".to_string(), "跳过")),
     }
-    // dmidecode(需 root,兜底)
-    if let Ok(o) = Cmd::new("dmidecode").args(["-s", "system-serial-number"]).output() {
-      let s = o.stdout.trim().to_string();
-      if !s.is_empty() {
-        return Some(s);
+    // 按优先级取第一个有效
+    for (p, name) in [
+      (&byodmi, "ByoDmi"),
+      (&prod, "DMI product_serial"),
+      (&board, "DMI board_serial"),
+      (&dmidec, "dmidecode"),
+      (&mid, "machine-id"),
+    ] {
+      if sn.is_none() {
+        if let Some(s) = p {
+          sn = Some(s.clone());
+          source = name.to_string();
+        }
       }
     }
-    // machine-id(机器唯一 ID 兜底)
-    if let Ok(s) = std::fs::read_to_string("/etc/machine-id") {
-      let s = s.trim().to_string();
-      if !s.is_empty() {
-        return Some(s);
-      }
-    }
-    None
+    info!("SN 校验: ByoDmi={byodmi:?} product_serial={prod:?} board_serial={board:?} dmidecode={dmidec:?} machine-id={mid:?} -> 采用:{source}");
   }
-  #[cfg(not(any(target_os = "linux", windows)))]
+
+  #[cfg(windows)]
   {
-    None
+    use std::os::windows::process::CommandExt;
+    let bios = std::process::Command::new("powershell")
+      .args(["-NoProfile", "-Command", "(Get-CimInstance Win32_BIOS).SerialNumber"])
+      .creation_flags(0x08000000)
+      .output()
+      .ok()
+      .and_then(|o| {
+        let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+        if !s.is_empty() && !s.eq_ignore_ascii_case("to be filled by o.e.m.") {
+          Some(s)
+        } else {
+          None
+        }
+      });
+    match &bios {
+      Some(s) => probes.push(CheckItem::new("SN-Win32_BIOS", "Get-CimInstance Win32_BIOS.SerialNumber", true, s.clone(), "成功")),
+      None => probes.push(CheckItem::new("SN-Win32_BIOS", "Get-CimInstance Win32_BIOS.SerialNumber", false, "读取失败".to_string(), "跳过")),
+    }
+    if let Some(s) = bios {
+      sn = Some(s);
+      source = "Win32_BIOS".to_string();
+    }
+    info!("SN 校验: Win32_BIOS={sn:?} -> 采用:{source}");
   }
+
+  (sn, probes, source)
 }
 
+/// 获取设备序列号(SN),获取不到返回 None(空 SN 时日志用默认名)
+pub fn get_sn() -> Option<String> {
+  probe_sn().0
+}
 /// 识别 CPU 型号(国产:海光 Hygon / 兆芯 Zhaoxin;Intel/AMD)
 pub fn get_cpu() -> String {
   #[cfg(target_os = "linux")]

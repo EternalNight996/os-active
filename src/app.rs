@@ -382,8 +382,8 @@ impl App {
           } else {
             ui.label(RichText::new(r.os.sn.as_str()).color(Color32::from_rgb(0x2f, 0x6f, 0xcf)));
           }
-          ui.label("");
-          ui.label("");
+          ui.label("来源:");
+          ui.label(RichText::new(&r.os.sn_source).color(Color32::from_gray(150)));
           ui.end_row();
         }
         if !r.os.pretty.is_empty() {

@@ -7,9 +7,14 @@ use e_log::preload::*;
 
 /// 执行一次完整检测(在后台线程调用)
 pub fn run() -> model::DetectResult {
-  let os = sys::detect_os();
-  info!("系统识别: {} {} ({})", os.name, os.version, os.arch);
-  let (activation, items, summary, expire_at) = active::check(&os);
+  let (sn, sn_probes, sn_source) = sys::probe_sn();
+  let mut os = sys::detect_os();
+  os.sn = sn.unwrap_or_default();
+  os.sn_source = sn_source.clone();
+  info!("系统识别: {} {} ({}) CPU={} SN={} 来源={}", os.name, os.version, os.arch, os.cpu, os.sn, os.sn_source);
+  let (activation, mut items, summary, expire_at) = active::check(&os);
+  // SN 探测明细置前(获取失败时逐项体现)
+  items.splice(0..0, sn_probes);
   // 明细逐条落日志(日志体现明细)
   for it in &items {
     info!(
