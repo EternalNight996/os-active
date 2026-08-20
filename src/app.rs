@@ -42,7 +42,7 @@ fn activation_color(a: Activation) -> Color32 {
     Activation::Activated => Color32::from_rgb(0x1f, 0xa0, 0x4f), // 绿
     Activation::NotActivated => Color32::from_rgb(0xd0, 0x33, 0x33), // 红
     Activation::NotApplicable => Color32::from_rgb(0x1e, 0x6f, 0xb8), // 蓝
-    Activation::Unknown => Color32::from_rgb(0x8a, 0x8a, 0x8a), // 灰
+    Activation::Unknown => Color32::from_rgb(0xe6, 0xa2, 0x3c), // 黄(警告:无法判定/未安装)
   }
 }
 
@@ -247,8 +247,17 @@ impl App {
   // ------------------------------------------------------------- UI
 
   fn status_hero(&self, ui: &mut egui::Ui) {
+    // 状态大字:未激活/无法判定 -> 直接 FAIL(产测语义);已激活/无需激活显示文字
     let (text, color) = match &self.result {
-      Some(r) => (r.activation.label().to_string(), activation_color(r.activation)),
+      Some(r) => {
+        let t = match r.activation {
+          Activation::Activated => "已激活".to_string(),
+          Activation::NotActivated => "FAIL".to_string(),
+          Activation::NotApplicable => "无需激活".to_string(),
+          Activation::Unknown => "FAIL".to_string(),
+        };
+        (t, activation_color(r.activation))
+      }
       None => ("检测中...".to_string(), Color32::from_rgb(0x8a, 0x8a, 0x8a)),
     };
     ui.vertical_centered(|ui| {

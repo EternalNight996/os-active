@@ -142,11 +142,11 @@ fn byodmi_sn() -> Option<String> {
   }
   let out = std::process::Command::new(&byodmi).arg("-smbiosinfo").output().ok()?;
   let text = String::from_utf8_lossy(&out.stdout);
-  // 宽松匹配 Serial Number / SerialNumber / Serial 后的值
+  // 精确匹配 Type1 Serial Number 字段(排除 UUID/handle 等其他 hex 字段)
   for line in text.lines() {
     let l = line.trim();
     let lower = l.to_lowercase();
-    if lower.contains("serial") && (l.contains(':') || l.contains('=')) {
+    if lower.contains("serial number") && !lower.contains("uuid") {
       let v = if let Some((_, v)) = l.split_once(':') {
         v.trim().to_string()
       } else if let Some((_, v)) = l.split_once('=') {
@@ -154,9 +154,8 @@ fn byodmi_sn() -> Option<String> {
       } else {
         continue;
       };
-      let v = v.trim();
-      if !v.is_empty() && !v.contains("None") && !v.contains("To be filled") && !v.contains("null") {
-        return Some(v.to_string());
+      if let Some(s) = sanitize_sn(&v) {
+        return Some(s);
       }
     }
   }
@@ -181,14 +180,29 @@ fn sn_tool_path() -> Option<String> {
   None
 }
 
+
+/// SN 值校验:过滤占位符/过短(<8 字符)/空值,返回有效 SN
+#[cfg(target_os = "linux")]
+fn sanitize_sn(v: &str) -> Option<String> {
+  let s = v.trim().to_string();
+  if s.is_empty() {
+    return None;
+  }
+  let lower = s.to_lowercase();
+  if lower.contains("none") || lower.contains("to be filled") || lower.contains("default string") || lower.contains("null") {
+    return None;
+  }
+  if s.chars().count() < 8 {
+    return None; // 过短,疑似无效/被截断
+  }
+  Some(s)
+}
+
 /// 读 DMI 序列号文件并过滤无效值
 #[cfg(target_os = "linux")]
 fn read_dmi_serial(path: &str) -> Option<String> {
   if let Ok(s) = std::fs::read_to_string(path) {
-    let s = s.trim().to_string();
-    if !s.is_empty() && !s.contains("None") && !s.contains("To be filled") && !s.contains("Default string") {
-      return Some(s);
-    }
+    return sanitize_sn(&s);
   }
   None
 }
