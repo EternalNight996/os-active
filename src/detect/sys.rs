@@ -209,7 +209,8 @@ fn sanitize_sn(v: &str) -> Option<String> {
   if s.chars().count() < 8 {
     return None; // 过短,疑似无效/被截断
   }
-  Some(s)
+  // 规范化:去除内部空格(VMware UUID 格式带空格,显示更干净)
+  Some(s.replace(' ', ""))
 }
 
 /// 读 DMI 序列号文件并过滤无效值
